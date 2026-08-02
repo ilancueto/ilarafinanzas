@@ -4,6 +4,15 @@ Estado: en desarrollo
 Inicio: 2026-08-02  
 Enfoque: aplicación de escritorio local, integridad histórica y persistencia nativa
 
+## Progreso de 3.2.0-alpha.1
+
+- Fase A completada: repositorio, Vite/TypeScript, retiro de PWA y artefactos V3.1 preservados.
+- Fase B iniciada: SQLite activo, migración automática con respaldo y recuperación de emergencia.
+- Primer instalador alpha compilado y verificado con pruebas, controles estáticos y build nativo.
+- Pendiente en Fase B: prueba de actualización con una instalación V3.1 real y pruebas específicas de migración.
+- Fase C pendiente: modelo normalizado de recurrencias, valores reales, cierres, presupuestos y tendencias.
+- Fase D pendiente: endurecimiento completo y publicación estable.
+
 ## 1. Objetivo
 
 Ilara V3.2 será exclusivamente una aplicación de escritorio para Windows. Deja de publicarse y mantenerse como PWA o aplicación web independiente, aunque Tauri continúe renderizando recursos HTML, CSS y TypeScript incrustados dentro del ejecutable.

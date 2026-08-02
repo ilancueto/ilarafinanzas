@@ -7,9 +7,15 @@ import {
   isValidMonthKey,
   parseMonthKey,
 } from "./finance-core.js";
+import {
+  loadStoredState,
+  migrateLegacySnapshot,
+  saveStoredState,
+} from "./src/storage.ts";
 
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.2.0-alpha.1";
 const STORAGE_KEY = "ilara-finanzas-v3";
+const EMERGENCY_STORAGE_KEY = "ilara-finanzas-v3-emergency";
 const BACKUP_FORMAT = "ilara-finanzas-backup";
 const BACKUP_VERSION = 1;
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
@@ -72,9 +78,10 @@ const dom = {
   toastAction: document.querySelector("#toastAction"),
 };
 
-let state = loadState();
+let state = createDefaultState();
 let toastTimer;
 let storageErrorShown = false;
+let initializationWarning = "";
 
 function createDefaultState() {
   return {
@@ -92,26 +99,67 @@ function createDefaultState() {
   };
 }
 
-function loadState() {
-  try {
-    const current = localStorage.getItem(STORAGE_KEY);
-    if (current) return normalizeState(JSON.parse(current));
-
-    for (const key of LEGACY_KEYS) {
-      const legacy = localStorage.getItem(key);
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        return parsed?.version === 3 ? normalizeState(parsed) : migrateLegacyState(parsed);
+async function loadState() {
+  const emergencyState = localStorage.getItem(EMERGENCY_STORAGE_KEY);
+  if (emergencyState) {
+    try {
+      const parsed = JSON.parse(emergencyState);
+      const normalized = parsed?.version === 3 ? normalizeState(parsed) : migrateLegacyState(parsed);
+      try {
+        await migrateLegacySnapshot(EMERGENCY_STORAGE_KEY, emergencyState, normalized);
+        localStorage.removeItem(EMERGENCY_STORAGE_KEY);
+      } catch (error) {
+        initializationWarning = "La copia de emergencia sigue activa hasta recuperar SQLite.";
+        console.warn("No se pudo consolidar la copia de emergencia en SQLite.", error);
       }
+      return normalized;
+    } catch (error) {
+      initializationWarning = "La copia de emergencia está dañada y no fue reemplazada.";
+      console.warn("No se pudo interpretar la copia de emergencia.", error);
     }
-  } catch (error) {
-    console.warn("No se pudieron cargar los datos guardados.", error);
   }
-  return createDefaultState();
+
+  try {
+    const storedState = await loadStoredState();
+    if (storedState) return normalizeState(storedState);
+  } catch (error) {
+    initializationWarning = "No pudimos abrir la base local. Los datos anteriores siguen intactos.";
+    console.warn("No se pudo abrir el almacenamiento SQLite.", error);
+  }
+
+  for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
+    const rawState = localStorage.getItem(key);
+    if (!rawState) continue;
+    try {
+      const parsed = JSON.parse(rawState);
+      const normalized = parsed?.version === 3 ? normalizeState(parsed) : migrateLegacyState(parsed);
+      try {
+        await migrateLegacySnapshot(key, rawState, normalized);
+        initializationWarning = "";
+      } catch (error) {
+        initializationWarning = "La migración a SQLite quedó pendiente. Tus datos V3.1 siguen intactos.";
+        console.warn("No se pudo migrar el estado anterior a SQLite.", error);
+      }
+      return normalized;
+    } catch (error) {
+      initializationWarning = "Encontramos datos anteriores dañados y no los reemplazamos.";
+      console.warn(`No se pudo interpretar el estado guardado en ${key}.`, error);
+    }
+  }
+
+  const fallback = createDefaultState();
+  try {
+    await saveStoredState(fallback);
+  } catch (error) {
+    initializationWarning ||= "No pudimos crear la base local.";
+    console.warn("No se pudo crear el estado inicial en SQLite.", error);
+  }
+  return fallback;
 }
 
 function normalizeState(input) {
   const fallback = createDefaultState();
+  const openingBalance = Number(input?.settings?.openingBalance);
   const people = Array.isArray(input?.people)
     ? input.people
         .map((person) => ({ id: sanitizeText(person?.id, createId()), name: sanitizeText(person?.name, "Sin nombre") }))
@@ -128,7 +176,7 @@ function normalizeState(input) {
     settings: {
       currency: "ARS",
       locale: "es-AR",
-      openingBalance: Number(input?.settings?.openingBalance) || 0,
+      openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0,
       projectionMonths: [6, 12, 18, 24].includes(Number(input?.settings?.projectionMonths))
         ? Number(input.settings.projectionMonths) : 12,
     },
@@ -142,7 +190,10 @@ function normalizeState(input) {
 
 function normalizeTransaction(transaction) {
   const kind = transaction?.kind === "income" ? "income" : "expense";
-  const amount = Math.max(Number(transaction?.amount) || 0, 0);
+  const parsedAmount = Number(transaction?.amount);
+  const amount = Number.isFinite(parsedAmount) && parsedAmount > 0
+    ? Math.round(parsedAmount * 100) / 100
+    : 0;
   const rawType = transaction?.schedule?.type || transaction?.scheduleType;
   const scheduleType = ["one-time", "monthly", "installment"].includes(rawType) ? rawType : "one-time";
   const rawStartMonth = transaction?.schedule?.startMonth || transaction?.startMonth;
@@ -208,16 +259,31 @@ function migrateLegacyState(legacy) {
   return migrated;
 }
 
-function saveState() {
+async function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await saveStoredState(cloneState(state));
+    try {
+      localStorage.removeItem(EMERGENCY_STORAGE_KEY);
+    } catch (error) {
+      console.warn("No se pudo limpiar la copia de emergencia anterior.", error);
+    }
     storageErrorShown = false;
     return true;
   } catch (error) {
-    console.warn("No se pudieron guardar los datos.", error);
+    console.warn("No se pudieron guardar los datos en SQLite.", error);
+    try {
+      localStorage.setItem(EMERGENCY_STORAGE_KEY, JSON.stringify(state));
+      if (!storageErrorShown) {
+        storageErrorShown = true;
+        showToast("SQLite no respondió. El cambio quedó en una copia local de emergencia.");
+      }
+      return true;
+    } catch (fallbackError) {
+      console.warn("Tampoco se pudo crear la copia de emergencia.", fallbackError);
+    }
     if (!storageErrorShown) {
       storageErrorShown = true;
-      showToast("No pudimos guardar los cambios. Exportá una copia para proteger tus datos.");
+      showToast("No pudimos confirmar el guardado. El cambio fue revertido.");
     }
     return false;
   }
@@ -503,7 +569,11 @@ function renderMovementCollection(container, occurrences, compact = false) {
     row.dataset.kind = item.kind;
     const statusButton = element("button", `status-check${item.status === "paid" ? " is-paid" : ""}`);
     statusButton.type = "button";
-    statusButton.setAttribute("aria-label", item.status === "paid" ? "Marcar como pendiente" : "Marcar como pagado");
+    const completeLabel = item.kind === "income" ? "Marcar como cobrado" : "Marcar como pagado";
+    const reopenLabel = item.kind === "income"
+      ? "Marcar ingreso como pendiente"
+      : "Marcar gasto como pendiente";
+    statusButton.setAttribute("aria-label", item.status === "paid" ? reopenLabel : completeLabel);
     statusButton.textContent = item.status === "paid" ? "\u2713" : "";
     statusButton.addEventListener("click", () => toggleOccurrenceStatus(item));
 
@@ -563,12 +633,12 @@ function renderProjection() {
 
   dom.projectionSummary.replaceChildren();
   [
-    ["Saldo al final", formatCurrency(final?.cumulative || state.settings.openingBalance), `${projection.length} meses desde ${formatMonthLabel(state.activeMonth, true)}`],
+    ["Saldo al final", formatCurrency(final?.cumulative ?? state.settings.openingBalance), `${projection.length} meses desde ${formatMonthLabel(state.activeMonth, true)}`],
     ["Ingresos del per\u00edodo", formatCurrency(totalIncome), "Todo lo previsto"],
     ["Gastos del per\u00edodo", formatCurrency(totalExpense), `${negativeMonths} mes${negativeMonths === 1 ? "" : "es"} con resultado negativo`],
   ].forEach(([label, value, copy], index) => {
     const card = element("article", "projection-stat");
-    if (index === 0 && (final?.cumulative || 0) < 0) card.dataset.tone = "negative";
+    if (index === 0 && (final?.cumulative ?? 0) < 0) card.dataset.tone = "negative";
     card.append(element("span", "", label), element("strong", "", value), element("small", "", copy));
     dom.projectionSummary.append(card);
   });
@@ -663,7 +733,6 @@ function render() {
   renderMovements();
   renderProjection();
   renderSettings();
-  saveState();
 }
 
 function switchView(view) {
@@ -682,12 +751,18 @@ function switchView(view) {
   });
   history.replaceState(null, "", `#${view}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
-  saveState();
+  void saveState();
 }
 
-function toggleOccurrenceStatus(item) {
+async function toggleOccurrenceStatus(item) {
+  const previousState = cloneState(state);
   if (item.status === "paid") delete state.occurrenceStatus[item.statusKey];
   else state.occurrenceStatus[item.statusKey] = "paid";
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   render();
   showToast(item.status === "paid" ? "Marcado como pendiente" : item.kind === "income" ? "Ingreso marcado como cobrado" : "Gasto marcado como pagado");
 }
@@ -753,7 +828,7 @@ function closeMovementDialog() {
   dom.movementDialog.close();
 }
 
-function saveMovement(event) {
+async function saveMovement(event) {
   event.preventDefault();
   const formData = new FormData(dom.movementForm);
   if (!validateScheduleRange({ report: true })) return;
@@ -775,6 +850,7 @@ function saveMovement(event) {
   });
   if (!transaction) return;
 
+  const previousState = cloneState(state);
   const index = state.transactions.findIndex((item) => item.id === existingId);
   if (index >= 0) state.transactions[index] = transaction;
   else state.transactions.push(transaction);
@@ -784,6 +860,11 @@ function saveMovement(event) {
     state.people.push({ id: createId(), name: personName });
   }
 
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   closeMovementDialog();
   render();
   showToast(index >= 0 ? "Movimiento actualizado" : "Movimiento agregado");
@@ -811,30 +892,50 @@ async function deleteMovement() {
     return;
   }
 
+  const previousState = cloneState(state);
   state.transactions = state.transactions.filter((item) => item.id !== id);
   Object.keys(state.occurrenceStatus).forEach((key) => {
     if (key.startsWith(`${id}:`)) delete state.occurrenceStatus[key];
   });
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   render();
   showToast("Movimiento eliminado", {
     label: "Deshacer",
-    handler: () => {
+    handler: async () => {
+      const beforeRestore = cloneState(state);
       state.transactions.splice(index, 0, transaction);
       Object.assign(state.occurrenceStatus, savedStatuses);
+      if (!await saveState()) {
+        state = beforeRestore;
+        render();
+        return;
+      }
       render();
       showToast("Movimiento restaurado");
     },
   });
 }
 
-function removePerson(personId) {
+async function removePerson(personId) {
   const person = state.people.find((item) => item.id === personId);
   if (!person) return;
-  if (state.transactions.some((transaction) => transaction.person === person.name)) {
+  if (state.transactions.some((transaction) =>
+    transaction.person.localeCompare(person.name, "es", { sensitivity: "base" }) === 0
+  )) {
     showToast("Esa persona tiene movimientos asignados");
     return;
   }
+  const previousState = cloneState(state);
   state.people = state.people.filter((item) => item.id !== personId);
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   render();
   showToast("Persona eliminada");
 }
@@ -861,12 +962,25 @@ async function importData(file) {
     const previousState = cloneState(state);
     downloadBackup(previousState, "antes-de-importar");
     state = importedState;
+    if (!await saveState()) {
+      state = previousState;
+      switchView(state.activeView);
+      render();
+      return;
+    }
     switchView(state.activeView);
     render();
     showToast("Copia importada correctamente", {
       label: "Restaurar anterior",
-      handler: () => {
+      handler: async () => {
+        const importedSnapshot = cloneState(state);
         state = previousState;
+        if (!await saveState()) {
+          state = importedSnapshot;
+          switchView(state.activeView);
+          render();
+          return;
+        }
         switchView(state.activeView);
         render();
         showToast("Se restauraron los datos anteriores");
@@ -927,15 +1041,18 @@ document.querySelectorAll("[data-add-movement]").forEach((button) =>
 dom.prevMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, -1);
   render();
+  void saveState();
 });
 dom.nextMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, 1);
   render();
+  void saveState();
 });
 dom.activeMonthInput.addEventListener("change", (event) => {
   if (isValidMonthKey(event.target.value)) {
     state.activeMonth = event.target.value;
     render();
+    void saveState();
   }
 });
 
@@ -946,7 +1063,7 @@ dom.projectionMonthsSelect.addEventListener("change", (event) => {
   state.settings.projectionMonths = Number(event.target.value);
   renderProjection();
   renderSettings();
-  saveState();
+  void saveState();
 });
 
 dom.movementForm.addEventListener("submit", saveMovement);
@@ -962,7 +1079,7 @@ dom.movementDialog.addEventListener("click", (event) => {
   if (event.target === dom.movementDialog) closeMovementDialog();
 });
 
-dom.personForm.addEventListener("submit", (event) => {
+dom.personForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = sanitizeText(new FormData(dom.personForm).get("name"));
   if (!name) return;
@@ -970,17 +1087,33 @@ dom.personForm.addEventListener("submit", (event) => {
     showToast("Esa persona ya est\u00e1 agregada");
     return;
   }
+  const previousState = cloneState(state);
   state.people.push({ id: createId(), name });
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   dom.personForm.reset();
   render();
   showToast("Persona agregada");
 });
 
-dom.preferencesForm.addEventListener("submit", (event) => {
+dom.preferencesForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(dom.preferencesForm);
-  state.settings.openingBalance = Number(formData.get("openingBalance")) || 0;
-  state.settings.projectionMonths = Number(formData.get("projectionMonths")) || 12;
+  const openingBalance = Number(formData.get("openingBalance"));
+  const projectionMonths = Number(formData.get("projectionMonths"));
+  const previousState = cloneState(state);
+  state.settings.openingBalance = Number.isFinite(openingBalance) ? openingBalance : 0;
+  state.settings.projectionMonths = [6, 12, 18, 24].includes(projectionMonths)
+    ? projectionMonths
+    : 12;
+  if (!await saveState()) {
+    state = previousState;
+    render();
+    return;
+  }
   render();
   showToast("Ajustes guardados");
 });
@@ -989,13 +1122,15 @@ dom.exportBtn.addEventListener("click", exportData);
 dom.importBtn.addEventListener("click", () => dom.importFileInput.click());
 dom.importFileInput.addEventListener("change", () => importData(dom.importFileInput.files[0]));
 
-const initialView = window.location.hash.slice(1);
-if (["dashboard", "movements", "projection", "settings"].includes(initialView)) state.activeView = initialView;
-switchView(state.activeView);
-render();
-
-if (!("__TAURI_INTERNALS__" in window) && "serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {}));
+async function initializeApp() {
+  state = await loadState();
+  const initialView = window.location.hash.slice(1);
+  if (["dashboard", "movements", "projection", "settings"].includes(initialView)) {
+    state.activeView = initialView;
+  }
+  switchView(state.activeView);
+  render();
+  if (initializationWarning) showToast(initializationWarning);
 }
 
-
+await initializeApp();

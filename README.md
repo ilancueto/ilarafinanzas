@@ -1,85 +1,85 @@
 # Ilara — Finanzas del hogar
 
-Ilara es una aplicación local para organizar ingresos, gastos, cuotas y proyecciones mensuales del hogar. No requiere cuenta y guarda la información en el dispositivo.
+Ilara es una aplicación local de escritorio para organizar ingresos, gastos, cuotas y proyecciones mensuales del hogar. No requiere cuenta ni conexión a Internet para funcionar.
 
-## Aplicación nativa para Windows
+## Estado de las versiones
 
-El instalador recomendado está en `release/Ilara-Finanzas-3.1.0-Windows-x64-Setup.exe`. Instala Ilara para el usuario actual, crea su entrada en Windows y no necesita Node.js, Rust ni un servidor local para funcionar.
+- 3.1.0: entrega estable instalada y preservada en release/.
+- 3.2.0-alpha.1: versión en desarrollo, exclusivamente para Windows mediante Tauri.
 
-También se incluye `release/Ilara-Finanzas-3.1.0-Windows-x64-Portable.exe`, que abre la aplicación sin instalación. Windows 10 y Windows 11 normalmente ya incluyen el runtime WebView2 requerido.
+Los ejecutables V3.1 no deben reemplazarse hasta completar y validar la migración de datos de V3.2.
 
-La aplicación instalada puede desinstalarse desde Configuración → Aplicaciones → Aplicaciones instaladas.
+## Aplicación instalada
 
-### Pasar datos desde la versión web
+El instalador estable actual está en release/Ilara-Finanzas-3.1.0-Windows-x64-Setup.exe. La aplicación se instala para el usuario actual y no necesita Node.js, Rust ni un servidor local para ejecutarse.
 
-Windows considera la versión web y la aplicación nativa como ubicaciones diferentes. Para migrar datos:
+El primer instalador de prueba está en release/Ilara-Finanzas-3.2.0-alpha.1-Windows-x64-Setup.exe. Es una versión alpha de actualización y todavía no reemplaza a V3.1 como entrega estable.
 
-1. Abrí la versión web y usá `Ajustes → Exportar copia`.
-2. Abrí la aplicación nativa y usá `Ajustes → Importar copia`.
-3. Revisá el resumen y confirmá la importación.
+La V3.2 deja de publicar una PWA o versión web independiente. Tauri continúa incrustando los recursos de interfaz dentro del ejecutable.
 
-## Ejecutar la versión web
+## Desarrollo
 
-La aplicación utiliza módulos JavaScript. No abras `index.html` directamente con doble clic, porque los navegadores bloquean esas importaciones bajo `file://`.
+Requisitos:
 
-En Windows, hacé doble clic en `INICIAR_ILARA.cmd`. Se abrirá el navegador en `http://127.0.0.1:8765/`; mantené la ventana del servidor abierta mientras uses la aplicación.
+- Node.js 20 o posterior.
+- Rust estable.
+- Visual Studio Build Tools con el workload de C++.
+- Microsoft Edge WebView2.
 
-También podés iniciarla desde PowerShell:
+Instalar dependencias:
 
-```powershell
-npm start
-```
+~~~powershell
+npm install
+~~~
 
-Después, abrí `http://127.0.0.1:8765/`. El servidor usa únicamente Node.js y no instala dependencias.
+Ejecutar la aplicación de escritorio en desarrollo:
 
-Para detenerlo, presioná `Ctrl+C` en la terminal o cerrá su ventana. Los datos siguen guardándose localmente en el navegador.
+~~~powershell
+npm run native:dev
+~~~
 
-## Verificación
+Verificar el proyecto:
 
-Requisitos: Node.js 20 o posterior.
-
-Para comprobar el frontend:
-
-```powershell
+~~~powershell
 npm test
 npm run check
-```
-
-Para comprobar o compilar la aplicación nativa, con Rust y Visual Studio Build Tools instalados:
-
-```powershell
+npm run build
 npm run native:check
+~~~
+
+Compilar el instalador:
+
+~~~powershell
 npm run native:build
-```
+~~~
 
 ## Estructura
 
-- `src-tauri/`: configuración y entrada nativa de Tauri.
-- `scripts/build-web.js`: prepara los recursos web que se incrustan en la aplicación.
-- `release/`: instalador, ejecutable portable y sumas SHA-256 de la entrega.
-- `index.html`: estructura de las vistas y diálogos.
-- `styles.css`: diseño responsive y estados visuales.
-- `app.js`: estado, persistencia, control de interfaz e importación/exportación.
-- `finance-core.js`: lógica financiera pura y reutilizable.
-- `tests/`: pruebas automatizadas del motor financiero.
-- `manifest.json` y `service-worker.js`: instalación y funcionamiento offline.
-- `PLAN_V3.1.md`: alcance y criterios de la entrega 3.1.
+- src/: entrada TypeScript del frontend incrustado.
+- src-tauri/: configuración, código Rust e instalador Tauri.
+- index.html: estructura de las vistas y diálogos.
+- styles.css: diseño responsive y estados visuales.
+- app.js: interfaz y coordinación del estado durante la migración progresiva.
+- finance-core.js: lógica financiera pura.
+- tests/: pruebas automatizadas.
+- release/: instaladores y hashes; V3.1 permanece preservada.
+- PLAN_V3.2.md: alcance, fases y aceptación de la versión en desarrollo.
+- CONTEXTO_HANDOFF_ILARA.md: contexto histórico de la entrega 3.1.
 
-## Datos y respaldos
+## Datos durante la migración
 
-- Los datos se guardan bajo la clave `ilara-finanzas-v3`.
-- La versión de la aplicación es independiente de la versión del formato interno.
-- Las copias V3.1 incluyen metadatos de formato, versión y fecha.
-- La importación sigue aceptando respaldos antiguos V1, V2 y V3.
-- Antes de importar se descarga una copia automática del estado actual.
+V3.2 usa SQLite como almacenamiento principal. En el primer arranque busca los datos V3.1 existentes, conserva una copia íntegra en la tabla de respaldos de migración y escribe el estado normalizado en la nueva base.
 
-La importación reemplaza los datos solamente después de mostrar una vista previa y recibir confirmación.
+La migración:
 
-## Publicación de una nueva versión
+- no elimina ni modifica el localStorage V3.1;
+- evita volver a migrar cuando SQLite ya contiene un estado;
+- conserva una copia de emergencia si SQLite falla durante un guardado;
+- recupera y consolida automáticamente esa copia en el próximo arranque;
+- mantiene importación y exportación JSON independientes de SQLite.
 
-1. Ejecutar pruebas y comprobación de sintaxis.
-2. Probar los anchos 320, 375, 560, 820, 1120 px y escritorio.
-3. Verificar exportación, importación, deshacer y recuperación.
-4. Comprobar una primera carga online y una reapertura offline.
-5. Actualizar `APP_VERSION`, `package.json`, `CHANGELOG.md` y el nombre de caché.
+Antes de probar la alpha con datos reales se recomienda exportar una copia JSON desde V3.1. La equivalencia completa de una actualización real todavía forma parte de la validación pendiente de V3.2.
 
+## Publicación
+
+Cada versión debe actualizar coordinadamente la versión del frontend, package.json, Cargo y Tauri. Antes de publicar se ejecutan pruebas, comprobación estática, build del frontend, cargo check, build release, verificación de migración y generación de hashes.

@@ -1,18 +1,23 @@
 {
   "name": "ilara-finanzas",
-  "version": "3.1.0",
+  "version": "3.2.0-alpha.1",
   "private": true,
   "type": "module",
   "scripts": {
-    "web:build": "node scripts/build-web.js",
-    "native:dev": "tauri dev",
-    "native:check": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "native:build": "tauri build",
-    "start": "node server.js",
+    "dev": "vite --host 127.0.0.1 --port 1420",
+    "build": "vite build",
+    "native:dev": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
+    "native:check": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo check --manifest-path src-tauri/Cargo.toml",
+    "native:build": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri build",
     "test": "node --test --test-isolation=none",
-    "check": "node --check app.js && node --check finance-core.js && node --check service-worker.js && node --check server.js && node --check scripts/build-web.js"
+    "check": "tsc --noEmit && node --check app.js && node --check finance-core.js"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.0"
+    "@tauri-apps/cli": "^2.11.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.2"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-sql": "^2.4.0"
   }
 }
