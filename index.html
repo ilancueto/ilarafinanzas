@@ -61,7 +61,10 @@
               <h1 id="dashboardTitle">Tu mes, de un vistazo</h1>
               <p id="dashboardSubtitle" class="heading-copy"></p>
             </div>
-            <span id="monthHealth" class="health-pill"></span>
+            <div class="month-state-actions">
+              <span id="monthHealth" class="health-pill"></span>
+              <button id="monthCloseBtn" class="secondary-btn" type="button">Cerrar mes</button>
+            </div>
           </div>
 
           <div id="summaryGrid" class="summary-grid" aria-live="polite"></div>
@@ -111,6 +114,17 @@
               <button class="text-btn" type="button" data-go-view="projection">Abrir proyección</button>
             </div>
             <div id="miniForecast" class="mini-forecast"></div>
+          </article>
+
+          <article class="panel analytics-panel">
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Análisis</p>
+                <h2>Presupuestos y tendencia</h2>
+              </div>
+              <span id="monthComparison" class="actual-caption"></span>
+            </div>
+            <div id="budgetProgress" class="budget-progress"></div>
           </article>
         </section>
 
@@ -221,6 +235,37 @@
 
             <article class="panel">
               <div class="panel-heading">
+                <p class="eyebrow">Organización</p>
+                <h2>Categorías</h2>
+                <p>Administrá las categorías disponibles para ingresos y gastos.</p>
+              </div>
+              <form id="categoryForm" class="inline-form">
+                <label class="grow-field">
+                  <span class="sr-only">Nombre de la categoría</span>
+                  <input name="name" type="text" placeholder="Ej. Mascotas" required />
+                </label>
+                <button class="secondary-btn" type="submit">Agregar</button>
+              </form>
+              <div id="categoriesList" class="chip-list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <p class="eyebrow">Límites mensuales</p>
+                <h2>Presupuestos</h2>
+                <p>Definí cuánto querés destinar a cada categoría.</p>
+              </div>
+              <form id="budgetForm" class="settings-form">
+                <label><span>Mes</span><input name="monthKey" type="month" required /></label>
+                <label><span>Categoría</span><input name="category" type="text" list="categoryOptions" required /></label>
+                <label><span>Presupuesto</span><input name="amount" type="number" min="0.01" step="0.01" required /></label>
+                <button class="primary-btn" type="submit">Guardar presupuesto</button>
+              </form>
+              <div id="budgetsList" class="budget-list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
                 <p class="eyebrow">Proyección</p>
                 <h2>Punto de partida</h2>
                 <p>Este saldo se usa al comenzar cada proyección.</p>
@@ -229,6 +274,10 @@
                 <label>
                   <span>Saldo inicial</span>
                   <input name="openingBalance" type="number" step="0.01" />
+                </label>
+                <label>
+                  <span>Mes inicial del saldo</span>
+                  <input name="openingBalanceMonth" type="month" required />
                 </label>
                 <label>
                   <span>Meses a proyectar</span>
@@ -251,6 +300,7 @@
               </div>
               <div class="data-actions">
                 <button id="exportBtn" class="secondary-btn" type="button">Exportar copia</button>
+                <button id="exportCsvBtn" class="secondary-btn" type="button">Exportar CSV</button>
                 <button id="importBtn" class="secondary-btn" type="button">Importar copia</button>
                 <input id="importFileInput" type="file" accept="application/json" hidden />
               </div>
@@ -278,6 +328,7 @@
         </div>
 
         <input name="id" type="hidden" />
+        <input name="occurrenceKey" type="hidden" />
         <fieldset class="kind-switch">
           <legend class="sr-only">Tipo de movimiento</legend>
           <label><input type="radio" name="kind" value="expense" checked /><span>Gasto</span></label>
@@ -295,6 +346,14 @@
           <label id="endMonthField" hidden><span>Finaliza en (opcional)</span><input name="endMonth" type="month" /></label>
           <label><span>Día estimado</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" placeholder="Ej. 10" /></label>
           <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" placeholder="Un dato que quieran recordar" /></label>
+          <label id="editScopeField" class="span-2" hidden>
+            <span>Aplicar el cambio a</span>
+            <select name="editScope">
+              <option value="current">Sólo este mes</option>
+              <option value="future" selected>Este mes y los siguientes</option>
+              <option value="all">Toda la serie</option>
+            </select>
+          </label>
         </div>
 
         <p id="formHint" class="form-hint"></p>
@@ -303,6 +362,28 @@
           <span class="action-spacer"></span>
           <button id="cancelDialogBtn" class="secondary-btn" type="button">Cancelar</button>
           <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settlementDialog" class="confirmation-dialog" aria-labelledby="settlementTitle">
+      <form id="settlementForm" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Valor real</p>
+            <h2 id="settlementTitle">Registrar pago</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-settlement aria-label="Cerrar">×</button>
+        </div>
+        <input name="occurrenceKey" type="hidden" />
+        <div class="form-grid settlement-fields">
+          <label><span>Importe real</span><input name="actualAmount" type="number" min="0.01" step="0.01" required /></label>
+          <label><span>Fecha efectiva</span><input name="effectiveDate" type="date" required /></label>
+        </div>
+        <div class="dialog-actions">
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-settlement>Cancelar</button>
+          <button class="primary-btn" type="submit">Confirmar</button>
         </div>
       </form>
     </dialog>

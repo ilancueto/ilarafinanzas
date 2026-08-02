@@ -1,19 +1,19 @@
 # Ilara V3.2 — Plan de entrega
 
-Estado: en desarrollo  
+Estado: completada
 Inicio: 2026-08-02  
 Enfoque: aplicación de escritorio local, integridad histórica y persistencia nativa
 
-## Progreso de 3.2.0-alpha.2
+## Resultado de 3.2.0 estable
 
 - Fase A completada: repositorio, Vite/TypeScript, retiro de PWA y artefactos V3.1 preservados.
-- Fase B técnicamente completada: tablas SQLite normalizadas, escrituras ordenadas y transaccionales.
+- Fase B completada: tablas SQLite normalizadas, escrituras ordenadas y transaccionales.
 - Migración automática con respaldo atómico, recuperación de emergencia y compatibilidad con alpha.1.
 - Importes internos convertidos a centavos enteros y estados huérfanos eliminados.
-- Pruebas de lógica y repositorio nativo, incluyendo rollback forzado, superadas.
-- Pendiente para cerrar Fase B: probar la actualización sobre una instalación V3.1 real con datos exportados.
-- Fase C pendiente: recurrencias históricas, valores reales, cierres, presupuestos y tendencias.
-- Fase D pendiente: endurecimiento completo y publicación estable.
+- Migración realista V3.1 validada mediante importación de interfaz.
+- Fase C completada: recurrencias históricas, valores reales, cierres, presupuestos, tendencias, cuotas y vencimientos.
+- Fase D completada: pruebas, CSP, build release, instalador, portable y hashes reproducibles.
+- V3.1 y las alphas permanecen preservadas como recuperación.
 
 ## 1. Objetivo
 

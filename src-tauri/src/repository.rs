@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager};
 
 const DATABASE_FILE: &str = "ilara.db";
 const MAX_BACKUP_BYTES: usize = 5 * 1024 * 1024;
-const DATA_VERSION: i64 = 4;
+const DATA_VERSION: i64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +21,16 @@ struct AppSnapshot {
     settings: Settings,
     people: Vec<Person>,
     transactions: Vec<FinanceTransaction>,
+    #[serde(default)]
     occurrence_status: HashMap<String, String>,
+    #[serde(default)]
+    occurrences: HashMap<String, OccurrenceRecord>,
+    #[serde(default)]
+    closed_months: HashMap<String, ClosedMonth>,
+    #[serde(default)]
+    budgets: Vec<Budget>,
+    #[serde(default)]
+    categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -30,6 +39,8 @@ struct Settings {
     currency: String,
     locale: String,
     opening_balance_cents: i64,
+    #[serde(default)]
+    opening_balance_month: String,
     projection_months: i64,
 }
 
@@ -62,6 +73,42 @@ struct Schedule {
     start_month: String,
     end_month: String,
     installments: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct OccurrenceRecord {
+    transaction_id: String,
+    month_key: String,
+    planned_amount_cents: i64,
+    series_amount_cents: i64,
+    actual_amount_cents: Option<i64>,
+    status: String,
+    effective_date: String,
+    kind: String,
+    name: String,
+    category: String,
+    person: String,
+    due_day: i64,
+    note: String,
+    schedule_type: String,
+    installment_index: i64,
+    installments: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct ClosedMonth {
+    closed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Budget {
+    id: String,
+    month_key: String,
+    category: String,
+    amount_cents: i64,
 }
 
 fn timestamp() -> String {
@@ -100,6 +147,9 @@ fn validate_snapshot(snapshot: &AppSnapshot) -> Result<(), String> {
     }
     if snapshot.settings.currency != "ARS" || snapshot.settings.locale != "es-AR" {
         return Err("La configuración regional no es válida.".into());
+    }
+    if !is_valid_month(&snapshot.settings.opening_balance_month) {
+        return Err("El mes inicial del saldo no es válido.".into());
     }
     if !matches!(snapshot.settings.projection_months, 6 | 12 | 18 | 24) {
         return Err("La cantidad de meses de proyección no es válida.".into());
@@ -167,6 +217,74 @@ fn validate_snapshot(snapshot: &AppSnapshot) -> Result<(), String> {
             return Err("Hay un estado mensual inválido o huérfano.".into());
         }
     }
+
+    for (key, record) in &snapshot.occurrences {
+        let Some((transaction_id, month_key)) = key.rsplit_once(':') else {
+            return Err("Hay una ocurrencia con formato inválido.".into());
+        };
+        let actual_is_valid = match record.status.as_str() {
+            "paid" => record.actual_amount_cents.is_some_and(|amount| amount > 0),
+            "pending" | "skipped" => record.actual_amount_cents.is_none(),
+            _ => false,
+        };
+        if transaction_id != record.transaction_id
+            || month_key != record.month_key
+            || !is_valid_month(&record.month_key)
+            || record.planned_amount_cents <= 0
+            || record.series_amount_cents <= 0
+            || !actual_is_valid
+            || (record.status == "paid"
+                && (record.effective_date.len() != 10
+                    || record.effective_date.as_bytes().get(4) != Some(&b'-')
+                    || record.effective_date.as_bytes().get(7) != Some(&b'-')))
+            || !matches!(record.kind.as_str(), "income" | "expense")
+            || record.name.trim().is_empty()
+            || record.category.trim().is_empty()
+            || record.person.trim().is_empty()
+            || !(0..=31).contains(&record.due_day)
+            || !matches!(
+                record.schedule_type.as_str(),
+                "one-time" | "monthly" | "installment"
+            )
+            || !(0..=120).contains(&record.installment_index)
+            || !(1..=120).contains(&record.installments)
+        {
+            return Err("Hay una ocurrencia mensual con datos inválidos.".into());
+        }
+    }
+
+    for (month_key, closed) in &snapshot.closed_months {
+        if !is_valid_month(month_key) || closed.closed_at.trim().is_empty() {
+            return Err("Hay un cierre mensual inválido.".into());
+        }
+    }
+
+    let mut category_names = HashSet::new();
+    for category in &snapshot.categories {
+        let normalized = category.trim().to_lowercase();
+        if normalized.is_empty() || !category_names.insert(normalized) {
+            return Err("La lista de categorías contiene valores inválidos o duplicados.".into());
+        }
+    }
+
+    let mut budget_ids = HashSet::new();
+    let mut budget_keys = HashSet::new();
+    for budget in &snapshot.budgets {
+        let key = format!(
+            "{}:{}",
+            budget.month_key,
+            budget.category.trim().to_lowercase()
+        );
+        if budget.id.trim().is_empty()
+            || !budget_ids.insert(budget.id.as_str())
+            || !is_valid_month(&budget.month_key)
+            || budget.category.trim().is_empty()
+            || budget.amount_cents <= 0
+            || !budget_keys.insert(key)
+        {
+            return Err("Hay un presupuesto inválido o duplicado.".into());
+        }
+    }
     Ok(())
 }
 
@@ -179,6 +297,11 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(include_str!(
             "../migrations/0002_create_normalized_finance_store.sql"
+        ))
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute_batch(include_str!(
+            "../migrations/0003_create_v32_finance_model.sql"
         ))
         .map_err(|error| error.to_string())?;
     Ok(())
@@ -298,6 +421,98 @@ fn load_normalized_state(connection: &Connection) -> Result<Option<AppSnapshot>,
             (format!("{transaction_id}:{month_key}"), status)
         })
         .collect();
+    let opening_balance_month = connection
+        .query_row(
+            "SELECT opening_balance_month FROM projection_origins WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or_else(|| active_month.clone());
+
+    let mut occurrences_query = connection
+        .prepare(
+            "SELECT transaction_id, month_key, planned_amount_cents, series_amount_cents,
+                    actual_amount_cents, status, effective_date, kind, name, category,
+                    person, due_day, note, schedule_type, installment_index, installments
+             FROM occurrence_records",
+        )
+        .map_err(|error| error.to_string())?;
+    let occurrence_rows = occurrences_query
+        .query_map([], |row| {
+            Ok(OccurrenceRecord {
+                transaction_id: row.get(0)?,
+                month_key: row.get(1)?,
+                planned_amount_cents: row.get(2)?,
+                series_amount_cents: row.get(3)?,
+                actual_amount_cents: row.get(4)?,
+                status: row.get(5)?,
+                effective_date: row.get(6)?,
+                kind: row.get(7)?,
+                name: row.get(8)?,
+                category: row.get(9)?,
+                person: row.get(10)?,
+                due_day: row.get(11)?,
+                note: row.get(12)?,
+                schedule_type: row.get(13)?,
+                installment_index: row.get(14)?,
+                installments: row.get(15)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let occurrences = occurrence_rows
+        .into_iter()
+        .map(|record| {
+            (
+                format!("{}:{}", record.transaction_id, record.month_key),
+                record,
+            )
+        })
+        .collect();
+
+    let mut closed_query = connection
+        .prepare("SELECT month_key, closed_at FROM closed_months")
+        .map_err(|error| error.to_string())?;
+    let closed_months = closed_query
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                ClosedMonth {
+                    closed_at: row.get(1)?,
+                },
+            ))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<HashMap<_, _>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    let mut budgets_query = connection
+        .prepare("SELECT id, month_key, category, amount_cents FROM budgets ORDER BY month_key, category")
+        .map_err(|error| error.to_string())?;
+    let budgets = budgets_query
+        .query_map([], |row| {
+            Ok(Budget {
+                id: row.get(0)?,
+                month_key: row.get(1)?,
+                category: row.get(2)?,
+                amount_cents: row.get(3)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    let mut categories_query = connection
+        .prepare("SELECT name FROM categories ORDER BY sort_order, name")
+        .map_err(|error| error.to_string())?;
+    let categories = categories_query
+        .query_map([], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| error.to_string())?;
 
     Ok(Some(AppSnapshot {
         version: 3,
@@ -307,11 +522,16 @@ fn load_normalized_state(connection: &Connection) -> Result<Option<AppSnapshot>,
             currency,
             locale,
             opening_balance_cents,
+            opening_balance_month,
             projection_months,
         },
         people,
         transactions,
         occurrence_status,
+        occurrences,
+        closed_months,
+        budgets,
+        categories,
     }))
 }
 
@@ -362,6 +582,21 @@ fn save_snapshot(
             .map_err(|error| error.to_string())?;
     }
 
+    transaction
+        .execute("DELETE FROM budgets", [])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM categories", [])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM closed_months", [])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM projection_origins", [])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM occurrence_records", [])
+        .map_err(|error| error.to_string())?;
     transaction
         .execute("DELETE FROM occurrence_status", [])
         .map_err(|error| error.to_string())?;
@@ -447,6 +682,78 @@ fn save_snapshot(
             .map_err(|error| error.to_string())?;
     }
 
+    for record in snapshot.occurrences.values() {
+        transaction
+            .execute(
+                "INSERT INTO occurrence_records (
+                   transaction_id, month_key, planned_amount_cents, series_amount_cents,
+                   actual_amount_cents, status, effective_date, kind, name, category,
+                   person, due_day, note, schedule_type, installment_index, installments
+                 ) VALUES (
+                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16
+                 )",
+                params![
+                    record.transaction_id,
+                    record.month_key,
+                    record.planned_amount_cents,
+                    record.series_amount_cents,
+                    record.actual_amount_cents,
+                    record.status,
+                    record.effective_date,
+                    record.kind,
+                    record.name,
+                    record.category,
+                    record.person,
+                    record.due_day,
+                    record.note,
+                    record.schedule_type,
+                    record.installment_index,
+                    record.installments,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    for (month_key, closed) in &snapshot.closed_months {
+        transaction
+            .execute(
+                "INSERT INTO closed_months (month_key, closed_at) VALUES (?1, ?2)",
+                params![month_key, closed.closed_at],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    transaction
+        .execute(
+            "INSERT INTO projection_origins (id, opening_balance_month) VALUES (1, ?1)",
+            params![snapshot.settings.opening_balance_month],
+        )
+        .map_err(|error| error.to_string())?;
+
+    for (index, category) in snapshot.categories.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO categories (name, sort_order) VALUES (?1, ?2)",
+                params![category, index as i64],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    for budget in &snapshot.budgets {
+        transaction
+            .execute(
+                "INSERT INTO budgets (id, month_key, category, amount_cents)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    budget.id,
+                    budget.month_key,
+                    budget.category,
+                    budget.amount_cents
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
     transaction
         .execute(
             "INSERT INTO app_state (id, state_json, data_version, updated_at)
@@ -505,6 +812,7 @@ mod tests {
                 currency: "ARS".into(),
                 locale: "es-AR".into(),
                 opening_balance_cents: -1250,
+                opening_balance_month: "2026-08".into(),
                 projection_months: 12,
             },
             people: vec![Person {
@@ -529,6 +837,40 @@ mod tests {
                 created_at: "2026-08-01T00:00:00.000Z".into(),
             }],
             occurrence_status: HashMap::from([("tx-1:2026-08".into(), "paid".into())]),
+            occurrences: HashMap::from([(
+                "archived:2026-07".into(),
+                OccurrenceRecord {
+                    transaction_id: "archived".into(),
+                    month_key: "2026-07".into(),
+                    planned_amount_cents: 5000,
+                    series_amount_cents: 5000,
+                    actual_amount_cents: Some(4900),
+                    status: "paid".into(),
+                    effective_date: "2026-07-05".into(),
+                    kind: "expense".into(),
+                    name: "Histórico".into(),
+                    category: "Hogar".into(),
+                    person: "Compartido".into(),
+                    due_day: 5,
+                    note: String::new(),
+                    schedule_type: "monthly".into(),
+                    installment_index: 0,
+                    installments: 1,
+                },
+            )]),
+            closed_months: HashMap::from([(
+                "2026-07".into(),
+                ClosedMonth {
+                    closed_at: "2026-08-01T00:00:00.000Z".into(),
+                },
+            )]),
+            budgets: vec![Budget {
+                id: "budget-1".into(),
+                month_key: "2026-08".into(),
+                category: "Hogar".into(),
+                amount_cents: 75000,
+            }],
+            categories: vec!["Hogar".into(), "Otros".into()],
         }
     }
 

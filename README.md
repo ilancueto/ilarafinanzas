@@ -6,15 +6,16 @@ Ilara es una aplicación local de escritorio para organizar ingresos, gastos, cu
 
 - 3.1.0: entrega estable instalada y preservada en release/.
 - 3.2.0-alpha.1: primera base técnica de escritorio.
-- 3.2.0-alpha.2: persistencia SQLite normalizada y transaccional, en validación.
+- 3.2.0-alpha.2: persistencia SQLite normalizada y transaccional.
+- 3.2.0: entrega estable actual.
 
-Los ejecutables V3.1 no deben reemplazarse hasta completar y validar la migración de datos de V3.2.
+Los ejecutables V3.1 se conservan como ruta de recuperación.
 
 ## Aplicación instalada
 
-El instalador estable actual está en release/Ilara-Finanzas-3.1.0-Windows-x64-Setup.exe. La aplicación se instala para el usuario actual y no necesita Node.js, Rust ni un servidor local para ejecutarse.
+El instalador estable actual está en release/Ilara-Finanzas-3.2.0-Windows-x64-Setup.exe. La aplicación se instala para el usuario actual y no necesita Node.js, Rust ni un servidor local para ejecutarse.
 
-El instalador de prueba más reciente está en release/Ilara-Finanzas-3.2.0-alpha.2-Windows-x64-Setup.exe. Es una versión alpha de actualización y todavía no reemplaza a V3.1 como entrega estable.
+También se incluye release/Ilara-Finanzas-3.2.0-Windows-x64-Portable.exe para abrir la aplicación sin instalarla.
 
 La V3.2 deja de publicar una PWA o versión web independiente. Tauri continúa incrustando los recursos de interfaz dentro del ejecutable.
 
@@ -39,20 +40,16 @@ Ejecutar la aplicación de escritorio en desarrollo:
 npm run native:dev
 ~~~
 
-Verificar el proyecto:
+Verificar el proyecto completo:
 
 ~~~powershell
-npm test
-npm run native:test
-npm run check
-npm run build
-npm run native:check
+npm run verify
 ~~~
 
-Compilar el instalador:
+Compilar y preparar instalador, portable y hashes:
 
 ~~~powershell
-npm run native:build
+npm run release:build
 ~~~
 
 ## Estructura
@@ -67,7 +64,7 @@ npm run native:build
 - src-tauri/src/repository.rs: repositorio SQLite nativo y transaccional.
 - tests/: pruebas automatizadas.
 - release/: instaladores y hashes; V3.1 permanece preservada.
-- PLAN_V3.2.md: alcance, fases y aceptación de la versión en desarrollo.
+- PLAN_V3.2.md: alcance, fases y aceptación de la versión entregada.
 - CONTEXTO_HANDOFF_ILARA.md: contexto histórico de la entrega 3.1.
 
 ## Datos durante la migración
@@ -85,8 +82,8 @@ La migración:
 - recupera y consolida automáticamente esa copia en el próximo arranque;
 - mantiene importación y exportación JSON independientes de SQLite.
 
-Antes de probar la alpha con datos reales se recomienda exportar una copia JSON desde V3.1. La equivalencia completa de una actualización real todavía forma parte de la validación pendiente de V3.2.
+La migración desde una copia V3.1 realista está cubierta por una prueba de interfaz y por pruebas transaccionales del repositorio. Aun así, se recomienda exportar una copia JSON desde V3.1 antes de actualizar.
 
 ## Publicación
 
-Cada versión debe actualizar coordinadamente la versión del frontend, package.json, Cargo y Tauri. Antes de publicar se ejecutan pruebas, comprobación estática, build del frontend, cargo check, build release, verificación de migración y generación de hashes.
+Cada versión debe actualizar coordinadamente la versión del frontend, package.json, Cargo y Tauri. `npm run release:build` ejecuta las verificaciones, compila el release y prepara artefactos con SHA-256 sin eliminar las versiones anteriores.

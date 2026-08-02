@@ -1,6 +1,6 @@
 {
   "name": "ilara-finanzas",
-  "version": "3.2.0-alpha.2",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,13 @@
     "native:check": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo check --manifest-path src-tauri/Cargo.toml",
     "native:build": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri build",
     "native:test": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo test --manifest-path src-tauri/Cargo.toml --lib",
+    "native:clippy": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "native:fmt": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "test": "node --test --test-isolation=none",
-    "check": "tsc --noEmit && node --check app.js && node --check finance-core.js"
+    "check": "tsc --noEmit && node --check app.js && node --check finance-core.js && node --check state-core.js",
+    "verify": "npm test && npm run check && npm run build && npm run native:fmt && npm run native:test && npm run native:check && npm run native:clippy",
+    "release:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1",
+    "release:build": "npm run verify && npm run native:build && npm run release:package"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.0",

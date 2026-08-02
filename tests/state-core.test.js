@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   cleanOccurrenceStatus,
+  escapeCsvCell,
   fromCents,
   normalizeUniqueIds,
   resolveStoredCents,
@@ -48,4 +49,11 @@ test("repara identificadores duplicados sin modificar los demás", () => {
     { id: "third", name: "Tres" },
   ], () => `generated-${++nextId}`);
   assert.deepEqual(normalized.map((item) => item.id), ["same", "generated-1", "third"]);
+});
+
+test("protege celdas CSV contra fórmulas y escapa comillas", () => {
+  assert.equal(escapeCsvCell("Alquiler"), '"Alquiler"');
+  assert.equal(escapeCsvCell('Dijo "hola"'), '"Dijo ""hola"""');
+  assert.equal(escapeCsvCell("=1+1"), '"\'=1+1"');
+  assert.equal(escapeCsvCell("-2+3"), '"\'-2+3"');
 });

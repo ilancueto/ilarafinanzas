@@ -37,3 +37,9 @@ export function normalizeUniqueIds(items, createId) {
     return id === item.id ? item : { ...item, id };
   });
 }
+
+export function escapeCsvCell(value) {
+  let text = String(value ?? "");
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}

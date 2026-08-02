@@ -1,5 +1,35 @@
 # Historial de cambios
 
+## 3.2.0 — 2026-08-02
+
+### Añadido
+
+- Persistencia SQLite normalizada, versionada y transaccional.
+- Ocurrencias mensuales materializadas con importe previsto, importe real y fecha efectiva.
+- Edición y eliminación de recurrencias para este mes, desde este mes o toda la serie.
+- Cierre y reapertura controlada de meses.
+- Presupuestos mensuales por categoría y comparación con el mes anterior.
+- Progreso, cuota actual y saldo restante de compras en cuotas.
+- Estados vencido, vence hoy y próximo a vencer.
+- Administración de categorías y exportación CSV protegida contra fórmulas.
+- Mes de origen explícito para el saldo inicial.
+- Instalador y portable estables con generación automática de SHA-256.
+
+### Corregido
+
+- Los pagos reales distintos de lo previsto ya no producen pendientes negativos.
+- Los campos ocultos de cuotas ya no bloquean la edición de movimientos mensuales.
+- Editar o eliminar una recurrencia conserva los meses pagados o cerrados.
+- El saldo inicial deja de aplicarse nuevamente al cambiar el inicio de la proyección.
+
+### Validado
+
+- Migración realista desde una copia V3.1 con importes decimales y cuotas.
+- Rollback completo cuando falla una escritura SQLite.
+- Persistencia de ocurrencias históricas aun cuando la serie original ya no existe.
+- Flujos de alta, pago real, cierre, reapertura, edición futura, presupuestos y responsive.
+- 20 pruebas de lógica y 5 pruebas nativas de repositorio.
+
 ## 3.1.0 — 2026-08-01
 
 ### Añadido

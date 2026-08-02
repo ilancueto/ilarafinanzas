@@ -1478,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "ilara-finanzas"
-version = "3.2.0-alpha.2"
+version = "3.2.0"
 dependencies = [
  "rusqlite",
  "serde",

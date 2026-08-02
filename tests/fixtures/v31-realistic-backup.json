@@ -1,0 +1,35 @@
+{
+  "activeMonth": "2026-08",
+  "incomesByMonth": {
+    "2026-07": [
+      {
+        "id": "income-v31",
+        "name": "Sueldo V3.1",
+        "category": "Sueldo",
+        "person": "Vos",
+        "amount": 1200000.55
+      }
+    ]
+  },
+  "entries": [
+    {
+      "id": "installment-v31",
+      "type": "installment",
+      "name": "Heladera V3.1",
+      "category": "Hogar",
+      "paidBy": "shared",
+      "amount": 100000.01,
+      "startMonth": "2026-07",
+      "installmentCount": 3
+    },
+    {
+      "id": "fixed-v31",
+      "type": "fixed",
+      "name": "Internet V3.1",
+      "category": "Servicios",
+      "paidBy": "partner",
+      "amount": 25000.25,
+      "startMonth": "2026-08"
+    }
+  ]
+}
