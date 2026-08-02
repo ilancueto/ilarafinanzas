@@ -1,0 +1,18 @@
+{
+  "name": "ilara-finanzas",
+  "version": "3.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "web:build": "node scripts/build-web.js",
+    "native:dev": "tauri dev",
+    "native:check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "native:build": "tauri build",
+    "start": "node server.js",
+    "test": "node --test --test-isolation=none",
+    "check": "node --check app.js && node --check finance-core.js && node --check service-worker.js && node --check server.js && node --check scripts/build-web.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.0"
+  }
+}

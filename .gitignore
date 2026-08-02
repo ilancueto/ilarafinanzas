@@ -1,0 +1,10 @@
+dist/
+node_modules/
+src-tauri/target/
+release/*.exe
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f3d4c" />
+    <meta name="description" content="Organizá los ingresos, gastos y cuotas de tu hogar." />
+    <title>Ilara · Finanzas del hogar</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="logo_ilara.png" type="image/png" />
+    <link rel="apple-touch-icon" href="logo_ilara.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <aside class="sidebar" aria-label="Navegación principal">
+        <a class="brand" href="#dashboard" data-go-view="dashboard" aria-label="Ilara, ir al inicio">
+          <span class="brand-logo-shell" aria-hidden="true"><img class="brand-logo" src="logo_ilara.png" alt="" /></span>
+          <small>Finanzas del hogar</small>
+        </a>
+
+        <nav class="side-nav">
+          <button class="nav-item is-active" type="button" data-view="dashboard">
+            <span class="nav-icon" aria-hidden="true">⌂</span><span>Inicio</span>
+          </button>
+          <button class="nav-item" type="button" data-view="movements">
+            <span class="nav-icon" aria-hidden="true">↕</span><span>Movimientos</span>
+          </button>
+          <button class="nav-item" type="button" data-view="projection">
+            <span class="nav-icon" aria-hidden="true">⌁</span><span>Proyección</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <span class="nav-icon" aria-hidden="true">⚙</span><span>Ajustes</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-foot">
+          <p>Todo queda guardado en este dispositivo.</p>
+          <button id="sidebarAddBtn" class="primary-btn full-width" type="button">+ Nuevo movimiento</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="mobile-brand">
+            <span class="brand-logo-shell brand-logo-mobile" aria-hidden="true"><img class="brand-logo" src="logo_ilara.png" alt="" /></span>
+          </div>
+          <div class="month-switcher" aria-label="Cambiar mes activo">
+            <button id="prevMonthBtn" class="icon-btn" type="button" aria-label="Mes anterior">‹</button>
+            <label class="month-control">
+              <span id="activeMonthLabel">Mes activo</span>
+              <span id="activeMonthDisplay" aria-hidden="true"></span>
+              <input id="activeMonthInput" type="month" aria-labelledby="activeMonthLabel" />
+            </label>
+            <button id="nextMonthBtn" class="icon-btn" type="button" aria-label="Mes siguiente">›</button>
+          </div>
+          <button id="topAddBtn" class="primary-btn desktop-add" type="button">+ Agregar</button>
+        </header>
+
+        <section id="dashboardView" class="view is-active" data-view-panel="dashboard">
+          <div class="page-heading dashboard-heading">
+            <div>
+              <p class="eyebrow">Panorama del hogar</p>
+              <h1 id="dashboardTitle">Tu mes, de un vistazo</h1>
+              <p id="dashboardSubtitle" class="heading-copy"></p>
+            </div>
+            <span id="monthHealth" class="health-pill"></span>
+          </div>
+
+          <div id="summaryGrid" class="summary-grid" aria-live="polite"></div>
+
+          <article class="panel actual-panel" aria-labelledby="actualSummaryTitle">
+            <div class="panel-heading inline-heading actual-heading">
+              <div>
+                <p class="eyebrow">Estado real</p>
+                <h2 id="actualSummaryTitle">Lo que ya pasó este mes</h2>
+              </div>
+              <span class="actual-caption">Separado de lo previsto</span>
+            </div>
+            <div id="actualSummary" class="actual-summary" aria-live="polite"></div>
+          </article>
+
+          <div class="dashboard-grid">
+            <article class="panel cash-panel">
+              <div class="panel-heading inline-heading">
+                <div>
+                  <p class="eyebrow">Flujo del mes</p>
+                  <h2>Cómo se reparte la plata</h2>
+                </div>
+                <span id="commitmentRate" class="large-rate"></span>
+              </div>
+              <div id="cashFlowVisual" class="cash-flow"></div>
+              <div id="categoryBreakdown" class="category-breakdown"></div>
+            </article>
+
+            <article class="panel activity-panel">
+              <div class="panel-heading inline-heading">
+                <div>
+                  <p class="eyebrow">Este mes</p>
+                  <h2>Próximos movimientos</h2>
+                </div>
+                <button class="text-btn" type="button" data-go-view="movements">Ver todos</button>
+              </div>
+              <div id="dashboardMovements" class="movement-list compact-list"></div>
+            </article>
+          </div>
+
+          <article class="panel forecast-strip-panel">
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Lo que viene</p>
+                <h2>Próximos 4 meses</h2>
+              </div>
+              <button class="text-btn" type="button" data-go-view="projection">Abrir proyección</button>
+            </div>
+            <div id="miniForecast" class="mini-forecast"></div>
+          </article>
+        </section>
+
+        <section id="movementsView" class="view" data-view-panel="movements" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">Control mensual</p>
+              <h1>Movimientos</h1>
+              <p class="heading-copy">Ingresos, gastos y cuotas reunidos en un solo lugar.</p>
+            </div>
+            <button class="primary-btn" type="button" data-add-movement>+ Nuevo movimiento</button>
+          </div>
+
+          <div class="filter-bar">
+            <label class="search-field">
+              <span class="sr-only">Buscar movimientos</span>
+              <input id="movementSearch" type="search" placeholder="Buscar por nombre o categoría" />
+            </label>
+            <label>
+              <span class="sr-only">Filtrar por tipo</span>
+              <select id="movementTypeFilter">
+                <option value="all">Todos los tipos</option>
+                <option value="income">Ingresos</option>
+                <option value="expense">Gastos</option>
+              </select>
+            </label>
+            <label>
+              <span class="sr-only">Filtrar por estado</span>
+              <select id="movementStatusFilter">
+                <option value="all">Todos los estados</option>
+                <option value="pending">Pendientes</option>
+                <option value="paid">Pagados / cobrados</option>
+              </select>
+            </label>
+          </div>
+
+          <article class="panel movements-panel">
+            <div id="movementTotals" class="list-totals"></div>
+            <div id="movementList" class="movement-list" aria-live="polite"></div>
+          </article>
+        </section>
+
+        <section id="projectionView" class="view" data-view-panel="projection" hidden>
+          <div class="page-heading projection-heading">
+            <div>
+              <p class="eyebrow">Mirar hacia adelante</p>
+              <h1>Proyección</h1>
+              <p class="heading-copy">Las cuotas desaparecen al terminar y los saldos se acumulan mes a mes.</p>
+            </div>
+            <label class="select-inline">
+              <span>Horizonte</span>
+              <select id="projectionMonthsSelect">
+                <option value="6">6 meses</option>
+                <option value="12">12 meses</option>
+                <option value="18">18 meses</option>
+                <option value="24">24 meses</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="projectionSummary" class="projection-summary"></div>
+
+          <article class="panel projection-chart-panel">
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Resultado mensual</p>
+                <h2>Ingresos frente a gastos</h2>
+              </div>
+              <div class="chart-legend"><span class="income-dot"></span> Ingresos <span class="expense-dot"></span> Gastos</div>
+            </div>
+            <div id="projectionChart" class="projection-chart"></div>
+          </article>
+
+          <article class="panel projection-list-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">Detalle</p>
+              <h2>Mes por mes</h2>
+            </div>
+            <div id="projectionList" class="projection-list"></div>
+          </article>
+        </section>
+
+        <section id="settingsView" class="view" data-view-panel="settings" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">Tu espacio</p>
+              <h1>Ajustes</h1>
+              <p class="heading-copy">Personalizá las personas y el punto de partida de la proyección.</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <article class="panel">
+              <div class="panel-heading">
+                <p class="eyebrow">Hogar</p>
+                <h2>Personas</h2>
+                <p>Podés asignar cada ingreso o gasto a quien corresponda.</p>
+              </div>
+              <form id="personForm" class="inline-form">
+                <label class="grow-field">
+                  <span class="sr-only">Nombre de la persona</span>
+                  <input name="name" type="text" placeholder="Nombre o Compartido" required />
+                </label>
+                <button class="secondary-btn" type="submit">Agregar</button>
+              </form>
+              <div id="peopleList" class="chip-list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-heading">
+                <p class="eyebrow">Proyección</p>
+                <h2>Punto de partida</h2>
+                <p>Este saldo se usa al comenzar cada proyección.</p>
+              </div>
+              <form id="preferencesForm" class="settings-form">
+                <label>
+                  <span>Saldo inicial</span>
+                  <input name="openingBalance" type="number" step="0.01" />
+                </label>
+                <label>
+                  <span>Meses a proyectar</span>
+                  <select name="projectionMonths">
+                    <option value="6">6 meses</option>
+                    <option value="12">12 meses</option>
+                    <option value="18">18 meses</option>
+                    <option value="24">24 meses</option>
+                  </select>
+                </label>
+                <button class="primary-btn" type="submit">Guardar ajustes</button>
+              </form>
+            </article>
+
+            <article class="panel data-panel">
+              <div class="panel-heading">
+                <p class="eyebrow">Respaldo</p>
+                <h2>Tus datos</h2>
+                <p>Exportá una copia para pasarla a otro dispositivo o recuperarla más adelante.</p>
+              </div>
+              <div class="data-actions">
+                <button id="exportBtn" class="secondary-btn" type="button">Exportar copia</button>
+                <button id="importBtn" class="secondary-btn" type="button">Importar copia</button>
+                <input id="importFileInput" type="file" accept="application/json" hidden />
+              </div>
+              <p class="privacy-note">La app funciona sin cuenta y no envía información a internet. <span id="appVersion"></span></p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <button id="floatingAddBtn" class="floating-add" type="button" aria-label="Agregar movimiento">+</button>
+
+    <nav class="bottom-nav" aria-label="Navegación móvil">
+      <button class="nav-item is-active" type="button" data-view="dashboard"><span aria-hidden="true">⌂</span><small>Inicio</small></button>
+      <button class="nav-item" type="button" data-view="movements"><span aria-hidden="true">↕</span><small>Movimientos</small></button>
+      <button class="nav-item" type="button" data-view="projection"><span aria-hidden="true">⌁</span><small>Proyección</small></button>
+      <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span><small>Ajustes</small></button>
+    </nav>
+
+    <dialog id="movementDialog" class="movement-dialog">
+      <form id="movementForm" class="movement-form" method="dialog">
+        <div class="dialog-head">
+          <div><p class="eyebrow">Movimiento</p><h2 id="movementDialogTitle">Agregar movimiento</h2></div>
+          <button id="closeDialogBtn" class="icon-btn close-btn" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <input name="id" type="hidden" />
+        <fieldset class="kind-switch">
+          <legend class="sr-only">Tipo de movimiento</legend>
+          <label><input type="radio" name="kind" value="expense" checked /><span>Gasto</span></label>
+          <label><input type="radio" name="kind" value="income" /><span>Ingreso</span></label>
+        </fieldset>
+
+        <div class="form-grid">
+          <label class="span-2"><span>Concepto</span><input name="name" type="text" placeholder="Ej. Alquiler, sueldo, heladera" required /></label>
+          <label><span>Categoría</span><input name="category" type="text" list="categoryOptions" placeholder="Ej. Hogar" required /></label>
+          <label><span>Persona</span><input name="person" type="text" list="peopleOptions" placeholder="Ej. Compartido" required /></label>
+          <label><span id="amountLabel">Monto</span><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /></label>
+          <label><span>Mes de inicio</span><input name="startMonth" type="month" required /></label>
+          <label><span>Modalidad</span><select name="scheduleType"><option value="one-time">Una sola vez</option><option value="monthly">Todos los meses</option><option value="installment">En cuotas</option></select></label>
+          <label id="installmentsField" hidden><span>Cantidad de cuotas</span><input name="installments" type="number" min="2" max="120" step="1" value="2" /></label>
+          <label id="endMonthField" hidden><span>Finaliza en (opcional)</span><input name="endMonth" type="month" /></label>
+          <label><span>Día estimado</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" placeholder="Ej. 10" /></label>
+          <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" placeholder="Un dato que quieran recordar" /></label>
+        </div>
+
+        <p id="formHint" class="form-hint"></p>
+        <div class="dialog-actions">
+          <button id="deleteMovementBtn" class="danger-btn" type="button" hidden>Eliminar</button>
+          <span class="action-spacer"></span>
+          <button id="cancelDialogBtn" class="secondary-btn" type="button">Cancelar</button>
+          <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirmationDialog" class="confirmation-dialog" aria-labelledby="confirmationTitle">
+      <form method="dialog" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Confirmación</p>
+            <h2 id="confirmationTitle">Confirmar acción</h2>
+          </div>
+          <button class="icon-btn close-btn" type="submit" value="cancel" aria-label="Cerrar">×</button>
+        </div>
+        <p id="confirmationCopy" class="confirmation-copy"></p>
+        <div id="confirmationDetails" class="confirmation-details" hidden></div>
+        <div class="dialog-actions">
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="submit" value="cancel">Cancelar</button>
+          <button id="confirmationAcceptBtn" class="danger-btn" type="submit" value="confirm">Confirmar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <datalist id="peopleOptions"></datalist>
+    <datalist id="categoryOptions"></datalist>
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+      <span id="toastMessage"></span>
+      <button id="toastAction" class="toast-action" type="button" hidden></button>
+    </div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
+
+
+

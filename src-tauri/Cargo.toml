@@ -1,0 +1,16 @@
+[package]
+name = "ilara-finanzas"
+version = "3.1.0"
+description = "Finanzas personales y del hogar"
+authors = ["Ilara"]
+edition = "2021"
+
+[lib]
+name = "ilara_finanzas_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
