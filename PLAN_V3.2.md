@@ -4,13 +4,15 @@ Estado: en desarrollo
 Inicio: 2026-08-02  
 Enfoque: aplicación de escritorio local, integridad histórica y persistencia nativa
 
-## Progreso de 3.2.0-alpha.1
+## Progreso de 3.2.0-alpha.2
 
 - Fase A completada: repositorio, Vite/TypeScript, retiro de PWA y artefactos V3.1 preservados.
-- Fase B iniciada: SQLite activo, migración automática con respaldo y recuperación de emergencia.
-- Primer instalador alpha compilado y verificado con pruebas, controles estáticos y build nativo.
-- Pendiente en Fase B: prueba de actualización con una instalación V3.1 real y pruebas específicas de migración.
-- Fase C pendiente: modelo normalizado de recurrencias, valores reales, cierres, presupuestos y tendencias.
+- Fase B técnicamente completada: tablas SQLite normalizadas, escrituras ordenadas y transaccionales.
+- Migración automática con respaldo atómico, recuperación de emergencia y compatibilidad con alpha.1.
+- Importes internos convertidos a centavos enteros y estados huérfanos eliminados.
+- Pruebas de lógica y repositorio nativo, incluyendo rollback forzado, superadas.
+- Pendiente para cerrar Fase B: probar la actualización sobre una instalación V3.1 real con datos exportados.
+- Fase C pendiente: recurrencias históricas, valores reales, cierres, presupuestos y tendencias.
 - Fase D pendiente: endurecimiento completo y publicación estable.
 
 ## 1. Objetivo

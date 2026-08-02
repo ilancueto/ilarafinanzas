@@ -27,12 +27,12 @@ export function isEndMonthValid(startMonth, endMonth) {
   return !endMonth || (isValidMonthKey(startMonth) && isValidMonthKey(endMonth) && monthDiff(startMonth, endMonth) >= 0);
 }
 
-export function installmentAmount(transaction, installmentIndex) {
-  const totalCents = Math.round(transaction.amount * 100);
+export function installmentAmountCents(transaction, installmentIndex) {
+  const totalCents = transaction.amountCents;
   const count = transaction.schedule.installments;
   const baseCents = Math.floor(totalCents / count);
   const remainder = totalCents % count;
-  return (baseCents + (installmentIndex < remainder ? 1 : 0)) / 100;
+  return baseCents + (installmentIndex < remainder ? 1 : 0);
 }
 
 export function occurrenceForMonth(transaction, monthKey, occurrenceStatus = {}) {
@@ -45,13 +45,13 @@ export function occurrenceForMonth(transaction, monthKey, occurrenceStatus = {})
     monthDiff(monthKey, transaction.schedule.endMonth) < 0
   ) return null;
 
-  const amount = transaction.schedule.type === "installment"
-    ? installmentAmount(transaction, diff) : transaction.amount;
+  const amountCents = transaction.schedule.type === "installment"
+    ? installmentAmountCents(transaction, diff) : transaction.amountCents;
   const key = `${transaction.id}:${monthKey}`;
   return {
     ...transaction,
     monthKey,
-    amountThisMonth: amount,
+    amountThisMonthCents: amountCents,
     installmentIndex: transaction.schedule.type === "installment" ? diff + 1 : 0,
     status: occurrenceStatus[key] === "paid" ? "paid" : "pending",
     statusKey: key,
@@ -73,35 +73,35 @@ export function getMonthTotals(transactions, occurrenceStatus, monthKey) {
   const occurrences = getOccurrences(transactions, occurrenceStatus, monthKey);
   const incomes = occurrences.filter((item) => item.kind === "income");
   const expenses = occurrences.filter((item) => item.kind === "expense");
-  const totalIncome = incomes.reduce((sum, item) => sum + item.amountThisMonth, 0);
-  const totalExpense = expenses.reduce((sum, item) => sum + item.amountThisMonth, 0);
-  const paidExpense = expenses.filter((item) => item.status === "paid")
-    .reduce((sum, item) => sum + item.amountThisMonth, 0);
-  const receivedIncome = incomes.filter((item) => item.status === "paid")
-    .reduce((sum, item) => sum + item.amountThisMonth, 0);
+  const totalIncomeCents = incomes.reduce((sum, item) => sum + item.amountThisMonthCents, 0);
+  const totalExpenseCents = expenses.reduce((sum, item) => sum + item.amountThisMonthCents, 0);
+  const paidExpenseCents = expenses.filter((item) => item.status === "paid")
+    .reduce((sum, item) => sum + item.amountThisMonthCents, 0);
+  const receivedIncomeCents = incomes.filter((item) => item.status === "paid")
+    .reduce((sum, item) => sum + item.amountThisMonthCents, 0);
 
   return {
     monthKey,
     occurrences,
     incomes,
     expenses,
-    totalIncome,
-    totalExpense,
-    paidExpense,
-    receivedIncome,
-    pendingExpense: totalExpense - paidExpense,
-    pendingIncome: totalIncome - receivedIncome,
-    actualBalance: receivedIncome - paidExpense,
-    balance: totalIncome - totalExpense,
-    commitmentRate: totalIncome > 0 ? totalExpense / totalIncome : totalExpense > 0 ? 1 : 0,
+    totalIncomeCents,
+    totalExpenseCents,
+    paidExpenseCents,
+    receivedIncomeCents,
+    pendingExpenseCents: totalExpenseCents - paidExpenseCents,
+    pendingIncomeCents: totalIncomeCents - receivedIncomeCents,
+    actualBalanceCents: receivedIncomeCents - paidExpenseCents,
+    balanceCents: totalIncomeCents - totalExpenseCents,
+    commitmentRate: totalIncomeCents > 0 ? totalExpenseCents / totalIncomeCents : totalExpenseCents > 0 ? 1 : 0,
   };
 }
 
-export function buildProjection({ transactions, occurrenceStatus, activeMonth, monthCount, openingBalance }) {
-  let cumulative = Number(openingBalance) || 0;
+export function buildProjection({ transactions, occurrenceStatus, activeMonth, monthCount, openingBalanceCents }) {
+  let cumulativeCents = Number.isSafeInteger(openingBalanceCents) ? openingBalanceCents : 0;
   return Array.from({ length: monthCount }, (_, index) => {
     const totals = getMonthTotals(transactions, occurrenceStatus, addMonths(activeMonth, index));
-    cumulative += totals.balance;
-    return { ...totals, cumulative };
+    cumulativeCents += totals.balanceCents;
+    return { ...totals, cumulativeCents };
   });
 }

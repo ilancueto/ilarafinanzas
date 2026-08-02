@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permisos mínimos de la ventana principal de Ilara.",
   "windows": ["main"],
-  "permissions": ["core:default", "sql:default"]
+  "permissions": ["core:default"]
 }

@@ -5,7 +5,7 @@ import {
   buildProjection,
   getMonthTotals,
   getOccurrences,
-  installmentAmount,
+  installmentAmountCents,
   isEndMonthValid,
   occurrenceForMonth,
 } from "../finance-core.js";
@@ -17,7 +17,7 @@ function transaction(overrides = {}) {
     name: "Compra",
     category: "Hogar",
     person: "Compartido",
-    amount: 100,
+    amountCents: 10000,
     schedule: { type: "one-time", startMonth: "2026-08", endMonth: "", installments: 1 },
     dueDay: 10,
     note: "",
@@ -52,25 +52,25 @@ test("valida el orden de inicio y fin", () => {
 });
 
 test("reparte centavos de cuotas sin perder dinero", () => {
-  const item = transaction({ amount: 100, schedule: { type: "installment", startMonth: "2026-08", endMonth: "", installments: 3 } });
-  const values = [0, 1, 2].map((index) => installmentAmount(item, index));
-  assert.deepEqual(values, [33.34, 33.33, 33.33]);
-  assert.equal(values.reduce((sum, value) => sum + value, 0), 100);
+  const item = transaction({ amountCents: 10001, schedule: { type: "installment", startMonth: "2026-08", endMonth: "", installments: 3 } });
+  const values = [0, 1, 2].map((index) => installmentAmountCents(item, index));
+  assert.deepEqual(values, [3334, 3334, 3333]);
+  assert.equal(values.reduce((sum, value) => sum + value, 0), 10001);
   assert.equal(occurrenceForMonth(item, "2026-11"), null);
 });
 
 test("calcula previsto, realizado y pendiente por separado", () => {
-  const income = transaction({ id: "income", kind: "income", name: "Sueldo", amount: 1000 });
-  const expense = transaction({ id: "expense", amount: 400 });
+  const income = transaction({ id: "income", kind: "income", name: "Sueldo", amountCents: 100000 });
+  const expense = transaction({ id: "expense", amountCents: 40000 });
   const status = { "income:2026-08": "paid", "expense:2026-08": "paid" };
   const totals = getMonthTotals([income, expense], status, "2026-08");
 
-  assert.equal(totals.totalIncome, 1000);
-  assert.equal(totals.totalExpense, 400);
-  assert.equal(totals.balance, 600);
-  assert.equal(totals.actualBalance, 600);
-  assert.equal(totals.pendingIncome, 0);
-  assert.equal(totals.pendingExpense, 0);
+  assert.equal(totals.totalIncomeCents, 100000);
+  assert.equal(totals.totalExpenseCents, 40000);
+  assert.equal(totals.balanceCents, 60000);
+  assert.equal(totals.actualBalanceCents, 60000);
+  assert.equal(totals.pendingIncomeCents, 0);
+  assert.equal(totals.pendingExpenseCents, 0);
 });
 
 test("ordena pendientes antes que pagados y luego por vencimiento", () => {
@@ -85,7 +85,7 @@ test("la proyección acumula desde el saldo inicial", () => {
   const income = transaction({
     id: "income",
     kind: "income",
-    amount: 100,
+    amountCents: 10000,
     schedule: { type: "monthly", startMonth: "2026-08", endMonth: "", installments: 1 },
   });
   const projection = buildProjection({
@@ -93,7 +93,7 @@ test("la proyección acumula desde el saldo inicial", () => {
     occurrenceStatus: {},
     activeMonth: "2026-08",
     monthCount: 3,
-    openingBalance: -50,
+    openingBalanceCents: -5000,
   });
-  assert.deepEqual(projection.map((month) => month.cumulative), [50, 150, 250]);
+  assert.deepEqual(projection.map((month) => month.cumulativeCents), [5000, 15000, 25000]);
 });

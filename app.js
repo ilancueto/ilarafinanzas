@@ -8,12 +8,19 @@ import {
   parseMonthKey,
 } from "./finance-core.js";
 import {
+  cleanOccurrenceStatus,
+  fromCents,
+  normalizeUniqueIds,
+  resolveStoredCents,
+  toCents,
+} from "./state-core.js";
+import {
   loadStoredState,
   migrateLegacySnapshot,
   saveStoredState,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.2.0-alpha.1";
+const APP_VERSION = "3.2.0-alpha.2";
 const STORAGE_KEY = "ilara-finanzas-v3";
 const EMERGENCY_STORAGE_KEY = "ilara-finanzas-v3-emergency";
 const BACKUP_FORMAT = "ilara-finanzas-backup";
@@ -88,7 +95,7 @@ function createDefaultState() {
     version: 3,
     activeMonth: formatMonthKey(new Date()),
     activeView: "dashboard",
-    settings: { currency: "ARS", locale: "es-AR", openingBalance: 0, projectionMonths: 12 },
+    settings: { currency: "ARS", locale: "es-AR", openingBalanceCents: 0, projectionMonths: 12 },
     people: [
       { id: "person-shared", name: "Compartido" },
       { id: "person-you", name: "Vos" },
@@ -159,14 +166,28 @@ async function loadState() {
 
 function normalizeState(input) {
   const fallback = createDefaultState();
-  const openingBalance = Number(input?.settings?.openingBalance);
-  const people = Array.isArray(input?.people)
+  const openingBalanceCents = resolveStoredCents(
+    input?.settings?.openingBalanceCents,
+    input?.settings?.openingBalance,
+  );
+  const people = normalizeUniqueIds(Array.isArray(input?.people)
     ? input.people
         .map((person) => ({ id: sanitizeText(person?.id, createId()), name: sanitizeText(person?.name, "Sin nombre") }))
         .filter((person, index, list) =>
           list.findIndex((item) => item.name.toLocaleLowerCase("es") === person.name.toLocaleLowerCase("es")) === index,
         )
-    : fallback.people;
+    : fallback.people, createId);
+
+  const transactionIds = new Set();
+  const transactions = (Array.isArray(input?.transactions)
+    ? input.transactions.map(normalizeTransaction).filter(Boolean)
+    : []
+  ).filter((transaction) => {
+    if (transactionIds.has(transaction.id)) return false;
+    transactionIds.add(transaction.id);
+    return true;
+  });
+  const occurrenceStatus = cleanOccurrenceStatus(input?.occurrenceStatus, transactionIds, isValidMonthKey);
 
   return {
     version: 3,
@@ -176,24 +197,23 @@ function normalizeState(input) {
     settings: {
       currency: "ARS",
       locale: "es-AR",
-      openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0,
+      openingBalanceCents,
       projectionMonths: [6, 12, 18, 24].includes(Number(input?.settings?.projectionMonths))
         ? Number(input.settings.projectionMonths) : 12,
     },
     people: people.length ? people : fallback.people,
-    transactions: Array.isArray(input?.transactions)
-      ? input.transactions.map(normalizeTransaction).filter(Boolean) : [],
-    occurrenceStatus: input?.occurrenceStatus && typeof input.occurrenceStatus === "object"
-      ? { ...input.occurrenceStatus } : {},
+    transactions,
+    occurrenceStatus,
   };
 }
 
 function normalizeTransaction(transaction) {
   const kind = transaction?.kind === "income" ? "income" : "expense";
-  const parsedAmount = Number(transaction?.amount);
-  const amount = Number.isFinite(parsedAmount) && parsedAmount > 0
-    ? Math.round(parsedAmount * 100) / 100
-    : 0;
+  const amountCents = resolveStoredCents(
+    transaction?.amountCents,
+    transaction?.amount,
+    { positiveOnly: true },
+  );
   const rawType = transaction?.schedule?.type || transaction?.scheduleType;
   const scheduleType = ["one-time", "monthly", "installment"].includes(rawType) ? rawType : "one-time";
   const rawStartMonth = transaction?.schedule?.startMonth || transaction?.startMonth;
@@ -202,7 +222,7 @@ function normalizeTransaction(transaction) {
   const installments = Math.min(
     Math.max(Math.trunc(Number(transaction?.schedule?.installments || transaction?.installments) || 2), 2), 120,
   );
-  if (!amount) return null;
+  if (amountCents <= 0) return null;
 
   return {
     id: sanitizeText(transaction?.id, createId()),
@@ -210,7 +230,7 @@ function normalizeTransaction(transaction) {
     name: sanitizeText(transaction?.name, kind === "income" ? "Ingreso" : "Gasto"),
     category: sanitizeText(transaction?.category, "Otros"),
     person: sanitizeText(transaction?.person, "Compartido"),
-    amount,
+    amountCents,
     schedule: {
       type: scheduleType,
       startMonth,
@@ -392,13 +412,13 @@ function formatMonthLabel(monthKey, short = false) {
   return value.charAt(0).toUpperCase() + value.slice(1).replace(".", "");
 }
 
-function formatCurrency(value, compact = false) {
+function formatCurrency(cents, compact = false) {
   return new Intl.NumberFormat(state.settings.locale, {
     style: "currency",
     currency: state.settings.currency,
     maximumFractionDigits: compact ? 0 : 2,
     notation: compact ? "compact" : "standard",
-  }).format(Number(value) || 0);
+  }).format(fromCents(cents));
 }
 
 function getMonthTotals(monthKey) {
@@ -411,7 +431,7 @@ function buildProjection(monthCount = state.settings.projectionMonths) {
     occurrenceStatus: state.occurrenceStatus,
     activeMonth: state.activeMonth,
     monthCount,
-    openingBalance: state.settings.openingBalance,
+    openingBalanceCents: state.settings.openingBalanceCents,
   });
 }
 
@@ -443,7 +463,7 @@ function renderDashboard() {
 
   const health = !totals.occurrences.length
     ? { label: "Sin datos todavía", tone: "neutral" }
-    : totals.balance >= 0
+    : totals.balanceCents >= 0
       ? { label: "Mes en equilibrio", tone: "positive" }
       : { label: "Revisar gastos", tone: "negative" };
   dom.monthHealth.textContent = health.label;
@@ -451,10 +471,10 @@ function renderDashboard() {
 
   dom.summaryGrid.replaceChildren();
   const cards = [
-    ["Ingresos previstos", formatCurrency(totals.totalIncome), `${totals.incomes.length} fuente${totals.incomes.length === 1 ? "" : "s"}`, "income"],
-    ["Gastos previstos", formatCurrency(totals.totalExpense), `${totals.expenses.length} compromiso${totals.expenses.length === 1 ? "" : "s"}`, "expense"],
-    ["Disponible estimado", formatCurrency(totals.balance), totals.balance >= 0 ? "Despu\u00e9s de todos los gastos" : "Faltante para cubrir el mes", totals.balance >= 0 ? "balance" : "danger"],
-    ["Pendiente de pagar", formatCurrency(totals.pendingExpense), `${formatCurrency(totals.paidExpense)} ya pagado`, "pending"],
+    ["Ingresos previstos", formatCurrency(totals.totalIncomeCents), `${totals.incomes.length} fuente${totals.incomes.length === 1 ? "" : "s"}`, "income"],
+    ["Gastos previstos", formatCurrency(totals.totalExpenseCents), `${totals.expenses.length} compromiso${totals.expenses.length === 1 ? "" : "s"}`, "expense"],
+    ["Disponible estimado", formatCurrency(totals.balanceCents), totals.balanceCents >= 0 ? "Despu\u00e9s de todos los gastos" : "Faltante para cubrir el mes", totals.balanceCents >= 0 ? "balance" : "danger"],
+    ["Pendiente de pagar", formatCurrency(totals.pendingExpenseCents), `${formatCurrency(totals.paidExpenseCents)} ya pagado`, "pending"],
   ];
   cards.forEach(([label, value, copy, tone]) => {
     const card = element("article", "summary-card");
@@ -466,9 +486,9 @@ function renderDashboard() {
   dom.actualSummary.replaceChildren();
   const pendingCount = totals.occurrences.filter((item) => item.status === "pending").length;
   const actualCards = [
-    ["Cobrado", formatCurrency(totals.receivedIncome), `${formatCurrency(totals.pendingIncome)} por cobrar`, "income"],
-    ["Pagado", formatCurrency(totals.paidExpense), `${formatCurrency(totals.pendingExpense)} por pagar`, "expense"],
-    ["Flujo realizado", formatCurrency(totals.actualBalance), "Cobrado menos pagado", totals.actualBalance >= 0 ? "balance" : "danger"],
+    ["Cobrado", formatCurrency(totals.receivedIncomeCents), `${formatCurrency(totals.pendingIncomeCents)} por cobrar`, "income"],
+    ["Pagado", formatCurrency(totals.paidExpenseCents), `${formatCurrency(totals.pendingExpenseCents)} por pagar`, "expense"],
+    ["Flujo realizado", formatCurrency(totals.actualBalanceCents), "Cobrado menos pagado", totals.actualBalanceCents >= 0 ? "balance" : "danger"],
     ["Por resolver", `${pendingCount} pendiente${pendingCount === 1 ? "" : "s"}`, "Movimientos todavía abiertos", "pending"],
   ];
   actualCards.forEach(([label, value, copy, tone]) => {
@@ -479,7 +499,7 @@ function renderDashboard() {
   });
 
   const percentage = Math.round(totals.commitmentRate * 100);
-  dom.commitmentRate.textContent = totals.totalIncome ? `${percentage}%` : "-";
+  dom.commitmentRate.textContent = totals.totalIncomeCents ? `${percentage}%` : "-";
   dom.cashFlowVisual.replaceChildren();
   const track = element("div", "flow-track");
   track.setAttribute("role", "progressbar");
@@ -493,10 +513,10 @@ function renderDashboard() {
   if (percentage > 85) fill.dataset.alert = "true";
   track.append(fill);
   const labels = element("div", "flow-labels");
-  const balanceLabel = totals.balance >= 0
-    ? `${formatCurrency(totals.balance)} libre`
-    : `${formatCurrency(Math.abs(totals.balance))} faltante`;
-  labels.append(element("span", "", `${formatCurrency(totals.totalExpense)} comprometido`), element("strong", "", balanceLabel));
+  const balanceLabel = totals.balanceCents >= 0
+    ? `${formatCurrency(totals.balanceCents)} libre`
+    : `${formatCurrency(Math.abs(totals.balanceCents))} faltante`;
+  labels.append(element("span", "", `${formatCurrency(totals.totalExpenseCents)} comprometido`), element("strong", "", balanceLabel));
   dom.cashFlowVisual.append(track, labels);
 
   renderCategoryBreakdown(totals.expenses);
@@ -511,7 +531,7 @@ function renderCategoryBreakdown(expenses) {
     return;
   }
   const categories = new Map();
-  expenses.forEach((item) => categories.set(item.category, (categories.get(item.category) || 0) + item.amountThisMonth));
+  expenses.forEach((item) => categories.set(item.category, (categories.get(item.category) || 0) + item.amountThisMonthCents));
   const sorted = [...categories.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const max = sorted[0][1];
   sorted.forEach(([category, amount]) => {
@@ -533,12 +553,12 @@ function renderMiniForecast() {
   buildProjection(4).forEach((month, index) => {
     const card = element("button", "forecast-card");
     card.type = "button";
-    if (month.balance < 0) card.dataset.tone = "negative";
+    if (month.balanceCents < 0) card.dataset.tone = "negative";
     if (index === 0) card.classList.add("is-current");
     card.append(
       element("span", "forecast-month", formatMonthLabel(month.monthKey, true)),
-      element("strong", "", formatCurrency(month.balance, true)),
-      element("small", "", month.balance >= 0 ? "queda" : "faltar\u00eda"),
+      element("strong", "", formatCurrency(month.balanceCents, true)),
+      element("small", "", month.balanceCents >= 0 ? "queda" : "faltar\u00eda"),
     );
     card.addEventListener("click", () => {
       state.activeMonth = month.monthKey;
@@ -586,7 +606,7 @@ function renderMovementCollection(container, occurrences, compact = false) {
 
     const amount = element("div", "movement-amount");
     amount.append(
-      element("strong", "", `${item.kind === "income" ? "+" : "-"}${formatCurrency(item.amountThisMonth)}`),
+      element("strong", "", `${item.kind === "income" ? "+" : "-"}${formatCurrency(item.amountThisMonthCents)}`),
       element("small", "", item.status === "paid" ? (item.kind === "income" ? "Cobrado" : "Pagado") : "Pendiente"),
     );
 
@@ -612,9 +632,9 @@ function renderMovements() {
 
   dom.movementTotals.replaceChildren();
   [
-    ["Ingresos", totals.totalIncome, "income"],
-    ["Gastos", totals.totalExpense, "expense"],
-    ["Balance", totals.balance, totals.balance >= 0 ? "balance" : "danger"],
+    ["Ingresos", totals.totalIncomeCents, "income"],
+    ["Gastos", totals.totalExpenseCents, "expense"],
+    ["Balance", totals.balanceCents, totals.balanceCents >= 0 ? "balance" : "danger"],
   ].forEach(([label, value, tone]) => {
     const item = element("div", "list-total");
     item.dataset.tone = tone;
@@ -627,23 +647,23 @@ function renderMovements() {
 function renderProjection() {
   const projection = buildProjection();
   const final = projection.at(-1);
-  const negativeMonths = projection.filter((month) => month.balance < 0).length;
-  const totalIncome = projection.reduce((sum, month) => sum + month.totalIncome, 0);
-  const totalExpense = projection.reduce((sum, month) => sum + month.totalExpense, 0);
+  const negativeMonths = projection.filter((month) => month.balanceCents < 0).length;
+  const totalIncomeCents = projection.reduce((sum, month) => sum + month.totalIncomeCents, 0);
+  const totalExpenseCents = projection.reduce((sum, month) => sum + month.totalExpenseCents, 0);
 
   dom.projectionSummary.replaceChildren();
   [
-    ["Saldo al final", formatCurrency(final?.cumulative ?? state.settings.openingBalance), `${projection.length} meses desde ${formatMonthLabel(state.activeMonth, true)}`],
-    ["Ingresos del per\u00edodo", formatCurrency(totalIncome), "Todo lo previsto"],
-    ["Gastos del per\u00edodo", formatCurrency(totalExpense), `${negativeMonths} mes${negativeMonths === 1 ? "" : "es"} con resultado negativo`],
+    ["Saldo al final", formatCurrency(final?.cumulativeCents ?? state.settings.openingBalanceCents), `${projection.length} meses desde ${formatMonthLabel(state.activeMonth, true)}`],
+    ["Ingresos del per\u00edodo", formatCurrency(totalIncomeCents), "Todo lo previsto"],
+    ["Gastos del per\u00edodo", formatCurrency(totalExpenseCents), `${negativeMonths} mes${negativeMonths === 1 ? "" : "es"} con resultado negativo`],
   ].forEach(([label, value, copy], index) => {
     const card = element("article", "projection-stat");
-    if (index === 0 && (final?.cumulative ?? 0) < 0) card.dataset.tone = "negative";
+    if (index === 0 && (final?.cumulativeCents ?? 0) < 0) card.dataset.tone = "negative";
     card.append(element("span", "", label), element("strong", "", value), element("small", "", copy));
     dom.projectionSummary.append(card);
   });
 
-  const maxValue = Math.max(1, ...projection.flatMap((month) => [month.totalIncome, month.totalExpense]));
+  const maxValue = Math.max(1, ...projection.flatMap((month) => [month.totalIncomeCents, month.totalExpenseCents]));
   dom.projectionChart.replaceChildren();
   dom.projectionChart.setAttribute("role", "img");
   dom.projectionChart.setAttribute("aria-label", `Gráfico de ingresos y gastos para ${projection.length} meses. El detalle completo está debajo.`);
@@ -652,10 +672,10 @@ function renderProjection() {
     const bars = element("div", "chart-bars");
     const incomeBar = element("span", "chart-bar income-bar");
     const expenseBar = element("span", "chart-bar expense-bar");
-    incomeBar.style.height = `${Math.max((month.totalIncome / maxValue) * 100, month.totalIncome ? 3 : 0)}%`;
-    expenseBar.style.height = `${Math.max((month.totalExpense / maxValue) * 100, month.totalExpense ? 3 : 0)}%`;
-    incomeBar.title = `Ingresos: ${formatCurrency(month.totalIncome)}`;
-    expenseBar.title = `Gastos: ${formatCurrency(month.totalExpense)}`;
+    incomeBar.style.height = `${Math.max((month.totalIncomeCents / maxValue) * 100, month.totalIncomeCents ? 3 : 0)}%`;
+    expenseBar.style.height = `${Math.max((month.totalExpenseCents / maxValue) * 100, month.totalExpenseCents ? 3 : 0)}%`;
+    incomeBar.title = `Ingresos: ${formatCurrency(month.totalIncomeCents)}`;
+    expenseBar.title = `Gastos: ${formatCurrency(month.totalExpenseCents)}`;
     incomeBar.setAttribute("aria-hidden", "true");
     expenseBar.setAttribute("aria-hidden", "true");
     bars.append(incomeBar, expenseBar);
@@ -667,16 +687,16 @@ function renderProjection() {
   projection.forEach((month) => {
     const row = element("button", "projection-row");
     row.type = "button";
-    if (month.balance < 0) row.dataset.tone = "negative";
+    if (month.balanceCents < 0) row.dataset.tone = "negative";
     const main = element("div", "projection-row-main");
     main.append(element("strong", "", formatMonthLabel(month.monthKey)), element("span", "", `${month.occurrences.length} movimiento${month.occurrences.length === 1 ? "" : "s"}`));
     const figures = element("div", "projection-figures");
     figures.append(
-      element("span", "income-text", `+ ${formatCurrency(month.totalIncome)}`),
-      element("span", "expense-text", `- ${formatCurrency(month.totalExpense)}`),
+      element("span", "income-text", `+ ${formatCurrency(month.totalIncomeCents)}`),
+      element("span", "expense-text", `- ${formatCurrency(month.totalExpenseCents)}`),
     );
     const result = element("div", "projection-result");
-    result.append(element("strong", "", formatCurrency(month.balance)), element("small", "", `Acumulado ${formatCurrency(month.cumulative)}`));
+    result.append(element("strong", "", formatCurrency(month.balanceCents)), element("small", "", `Acumulado ${formatCurrency(month.cumulativeCents)}`));
     row.append(main, figures, result);
     row.addEventListener("click", () => {
       state.activeMonth = month.monthKey;
@@ -701,7 +721,7 @@ function renderSettings() {
     }
     dom.peopleList.append(chip);
   });
-  dom.preferencesForm.elements.openingBalance.value = state.settings.openingBalance;
+  dom.preferencesForm.elements.openingBalance.value = fromCents(state.settings.openingBalanceCents);
   dom.preferencesForm.elements.projectionMonths.value = String(state.settings.projectionMonths);
   dom.appVersion.textContent = `Versión ${APP_VERSION}.`;
 }
@@ -789,10 +809,10 @@ function updateScheduleFields() {
   dom.amountLabel.textContent = isInstallment ? "Monto total" : "Monto";
 
   if (isInstallment) {
-    const total = Number(dom.movementForm.elements.amount.value) || 0;
+    const totalCents = toCents(dom.movementForm.elements.amount.value);
     const count = Number(dom.movementForm.elements.installments.value) || 2;
-    dom.formHint.textContent = total > 0
-      ? `${count} cuotas de aproximadamente ${formatCurrency(total / count)}. La \u00faltima se ajusta si hace falta.`
+    dom.formHint.textContent = totalCents > 0
+      ? `${count} cuotas de aproximadamente ${formatCurrency(Math.round(totalCents / count))}. La \u00faltima se ajusta si hace falta.`
       : "Ingres\u00e1 el total de la compra, no el valor de cada cuota.";
   } else if (isMonthly) {
     dom.formHint.textContent = "Se repetir\u00e1 cada mes hasta la fecha final, o sin l\u00edmite si la dej\u00e1s vac\u00eda.";
@@ -810,7 +830,7 @@ function openMovementDialog(transactionId = "") {
   dom.movementForm.elements.name.value = transaction?.name || "";
   dom.movementForm.elements.category.value = transaction?.category || "";
   dom.movementForm.elements.person.value = transaction?.person || state.people[0]?.name || "Compartido";
-  dom.movementForm.elements.amount.value = transaction?.amount || "";
+  dom.movementForm.elements.amount.value = transaction ? fromCents(transaction.amountCents) : "";
   dom.movementForm.elements.startMonth.value = transaction?.schedule.startMonth || state.activeMonth;
   dom.movementForm.elements.scheduleType.value = transaction?.schedule.type || "one-time";
   dom.movementForm.elements.installments.value = transaction?.schedule.installments || 2;
@@ -1102,10 +1122,10 @@ dom.personForm.addEventListener("submit", async (event) => {
 dom.preferencesForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(dom.preferencesForm);
-  const openingBalance = Number(formData.get("openingBalance"));
+  const openingBalanceCents = toCents(formData.get("openingBalance"));
   const projectionMonths = Number(formData.get("projectionMonths"));
   const previousState = cloneState(state);
-  state.settings.openingBalance = Number.isFinite(openingBalance) ? openingBalance : 0;
+  state.settings.openingBalanceCents = openingBalanceCents;
   state.settings.projectionMonths = [6, 12, 18, 24].includes(projectionMonths)
     ? projectionMonths
     : 12;

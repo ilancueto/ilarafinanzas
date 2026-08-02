@@ -1,6 +1,6 @@
 {
   "name": "ilara-finanzas",
-  "version": "3.2.0-alpha.1",
+  "version": "3.2.0-alpha.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "native:dev": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri dev",
     "native:check": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo check --manifest-path src-tauri/Cargo.toml",
     "native:build": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && tauri build",
+    "native:test": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "test": "node --test --test-isolation=none",
     "check": "tsc --noEmit && node --check app.js && node --check finance-core.js"
   },
@@ -18,6 +19,6 @@
     "vite": "^7.1.2"
   },
   "dependencies": {
-    "@tauri-apps/plugin-sql": "^2.4.0"
+    "@tauri-apps/api": "^2.11.1"
   }
 }
