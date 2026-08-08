@@ -2,38 +2,50 @@
 
 Repo: https://github.com/ilancueto/ilarafinanzas
 
-## Camino recomendado
+## Requisito
 
-1. Compilar e instalar localmente:
+```powershell
+gh auth login   # una sola vez
+gh auth status  # debe figurar ilancueto
+```
+
+Si `gh` no se reconoce, reabrí la terminal o usá:
+
+`C:\Program Files\GitHub CLI\gh.exe`
+
+## Camino automático (recomendado)
+
+1. Compilar:
    ```powershell
    npm run release:build
    ```
-2. En `release/` queda solo:
-   - `Ilara-Finanzas-<versión>-Windows-x64-Setup.exe`
-   - `SHA256SUMS.txt`
-3. En GitHub → **Releases** → **Draft a new release**:
-   - Tag: `v3.9.9.9` (misma versión que `package.json`, con prefijo `v`)
-   - Title: `Ilara Finanzas 3.9.9.9`
-   - Description: pegá el bloque del `CHANGELOG.md` de esa versión
-   - Adjuntá el **Setup.exe** (y opcionalmente `SHA256SUMS.txt`)
-   - **Publish release**
+2. Publicar Release + Setup:
+   ```powershell
+   npm run release:publish
+   ```
+   o:
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github-release.ps1
+   ```
+
+Opcional: `-Version 3.9.9.10`
+
+Eso crea/usa el tag `vX.Y.Z`, publica la Release y sube:
+
+- `Ilara-Finanzas-<versión>-Windows-x64-Setup.exe`
+- `SHA256SUMS.txt`
+
+Si la Release ya existe, solo actualiza los archivos (`--clobber`).
 
 ## Actualizar en la PC
 
-1. Descargá el Setup de la última Release.
-2. Ejecutalo (instala encima).
-3. Tus datos siguen en AppData (no se borran).
+1. Ajustes → **Buscar actualizaciones**, o
+2. Descargá el Setup desde [Releases](https://github.com/ilancueto/ilarafinanzas/releases) e instalá encima.
 
 ## Portable
 
-El portable quedó **legacy**. Solo si hace falta:
+Legacy. Solo si hace falta:
 
 ```powershell
 powershell -File scripts/package-release.ps1 -IncludePortable
 ```
-
-No se sube a Releases salvo emergencia.
-
-## Después (actualizador en la app)
-
-Con el repo público y Releases publicadas se puede agregar “Buscar actualizaciones” leyendo la API de GitHub. Eso es un paso siguiente de código.
