@@ -1,5 +1,12 @@
 # Historial de cambios
 
+## 3.9.9.10 — Estable — 2026-08-07
+
+### Añadido
+- Ajustes → **Buscar actualizaciones**: consulta la última Release en GitHub y ofrece abrir el Setup.
+- Botón **Ver Releases en GitHub**.
+- CSP y comando nativo para abrir URLs en el navegador.
+
 ## 3.9.9.9 — Estable (cierre de pulido UX) — 2026-08-07
 
 ### Distribución

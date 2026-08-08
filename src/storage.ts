@@ -52,6 +52,10 @@ export type DataProfilesResponse = {
   profiles: DataProfileInfo[];
 };
 
+export async function openExternalUrl(url: string): Promise<void> {
+  return invoke<void>("open_external_url", { url });
+}
+
 export async function loadStoredState(): Promise<unknown | null> {
   await writeQueue;
   return invoke<unknown | null>("load_app_state");

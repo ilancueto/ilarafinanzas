@@ -144,6 +144,7 @@ pub fn run() {
             drive_sync::drive_push,
             drive_sync::drive_pull,
             drive_sync::drive_confirm_pulled,
+            drive_sync::open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Ilara Finanzas");

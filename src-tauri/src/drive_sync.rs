@@ -157,6 +157,19 @@ fn http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|error| error.to_string())
 }
 
+/// Abre una URL en el navegador del sistema (Releases, OAuth, etc.).
+#[tauri::command]
+pub fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("La URL está vacía.".into());
+    }
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err("Solo se permiten URLs http(s).".into());
+    }
+    open_browser(trimmed)
+}
+
 fn open_browser(url: &str) -> Result<(), String> {
     // IMPORTANT: On Windows, `cmd /C start … url` splits on `&` and truncates OAuth
     // URLs (multiple query params) → Google Error 400 invalid_request.

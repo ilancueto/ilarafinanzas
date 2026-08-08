@@ -35,12 +35,17 @@ import {
   loadStoredState,
   migrateLegacySnapshot,
   resetSandboxProfile,
+  openExternalUrl,
   saveStoredState,
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.9";
+const APP_VERSION = "3.9.9.10";
 const APP_CHANNEL = "Estable";
+/** Repo público de Releases (instalador Setup). */
+const GITHUB_REPO = "ilancueto/ilarafinanzas";
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
+const GITHUB_LATEST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const DRIVE_PUSH_DEBOUNCE_MS = 12_000;
 const STORAGE_KEY = "ilara-finanzas-v3";
 const EMERGENCY_STORAGE_KEY_BASE = "ilara-finanzas-v3-emergency";
@@ -266,6 +271,9 @@ const dom = {
   exportBtn: document.querySelector("#exportBtn"),
   importBtn: document.querySelector("#importBtn"),
   importFileInput: document.querySelector("#importFileInput"),
+  checkUpdatesBtn: document.querySelector("#checkUpdatesBtn"),
+  openReleasesBtn: document.querySelector("#openReleasesBtn"),
+  updateStatusText: document.querySelector("#updateStatusText"),
   driveSetupBlock: document.querySelector("#driveSetupBlock"),
   driveClientId: document.querySelector("#driveClientId"),
   driveClientSecret: document.querySelector("#driveClientSecret"),
@@ -2796,8 +2804,119 @@ async function handleResetSandboxProfile() {
   }
 }
 
+/** Compara versiones de producto multi-segmento (3.9.9.9). >0 si a>b, <0 si a<b. */
+function compareProductVersions(a, b) {
+  const pa = String(a || "").replace(/^v/i, "").split(".").map((part) => Number(part) || 0);
+  const pb = String(b || "").replace(/^v/i, "").split(".").map((part) => Number(part) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da !== db) return da - db;
+  }
+  return 0;
+}
+
+async function openBrowserUrl(url) {
+  try {
+    await openExternalUrl(url);
+  } catch (error) {
+    console.warn("No se pudo abrir el navegador nativo.", error);
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (fallbackError) {
+      console.warn("Tampoco window.open.", fallbackError);
+      showToast("Abrí manualmente: " + url);
+    }
+  }
+}
+
+function setUpdateStatus(text) {
+  if (dom.updateStatusText) dom.updateStatusText.textContent = text;
+}
+
+async function checkForAppUpdates({ interactive = true } = {}) {
+  setUpdateStatus(`Tu versión: ${APP_CHANNEL} · v${APP_VERSION}. Consultando GitHub…`);
+  if (dom.checkUpdatesBtn) dom.checkUpdatesBtn.disabled = true;
+  try {
+    const response = await fetch(GITHUB_LATEST_API, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (response.status === 404) {
+      setUpdateStatus(
+        `Tu versión: v${APP_VERSION}. Todavía no hay Releases publicadas en GitHub (publicá v${APP_VERSION} en el repo).`,
+      );
+      if (interactive) {
+        showToast("No hay Releases en GitHub todavía", {
+          label: "Abrir repo",
+          handler: () => void openBrowserUrl(GITHUB_RELEASES_URL),
+        });
+      }
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(`GitHub respondió ${response.status}`);
+    }
+    const release = await response.json();
+    const tag = String(release.tag_name || release.name || "").trim();
+    const remoteVersion = tag.replace(/^v/i, "");
+    if (!remoteVersion) throw new Error("La Release no tiene versión legible");
+
+    const assets = Array.isArray(release.assets) ? release.assets : [];
+    const setupAsset = assets.find((asset) =>
+      /setup\.exe$/i.test(asset.name || "") || /Windows-x64-Setup\.exe$/i.test(asset.name || ""),
+    );
+    const downloadUrl = setupAsset?.browser_download_url || release.html_url || GITHUB_RELEASES_URL;
+    const cmp = compareProductVersions(remoteVersion, APP_VERSION);
+
+    if (cmp > 0) {
+      setUpdateStatus(
+        `Hay una versión nueva: v${remoteVersion} (vos tenés v${APP_VERSION}). Descargá el Setup e instalá encima.`,
+      );
+      if (interactive) {
+        const go = await confirmAction({
+          title: "Actualización disponible",
+          copy: `En GitHub está v${remoteVersion}. Tu app es v${APP_VERSION}. ¿Abrir la descarga del instalador?`,
+          details: [
+            release.name ? `Release: ${release.name}` : `Tag: ${tag}`,
+            setupAsset ? `Archivo: ${setupAsset.name}` : "Abrirá la página de la Release",
+            "Tus datos en este PC no se borran al instalar encima.",
+          ].filter(Boolean),
+          confirmLabel: "Descargar / abrir",
+        });
+        if (go) await openBrowserUrl(downloadUrl);
+      }
+    } else if (cmp === 0) {
+      setUpdateStatus(`Estás al día: v${APP_VERSION} es la última Release en GitHub.`);
+      if (interactive) showToast("Ya tenés la última versión");
+    } else {
+      setUpdateStatus(
+        `Tu app es v${APP_VERSION}; en GitHub la última publicada es v${remoteVersion} (más vieja o pre-release).`,
+      );
+      if (interactive) showToast("Tu versión es más nueva que la Release pública");
+    }
+  } catch (error) {
+    console.warn("No se pudo buscar actualizaciones.", error);
+    setUpdateStatus(
+      `Tu versión: v${APP_VERSION}. No se pudo consultar GitHub (${storageErrorMessage(error)}).`,
+    );
+    if (interactive) {
+      showToast("No se pudo buscar actualizaciones", {
+        label: "Abrir Releases",
+        handler: () => void openBrowserUrl(GITHUB_RELEASES_URL),
+      });
+    }
+  } finally {
+    if (dom.checkUpdatesBtn) dom.checkUpdatesBtn.disabled = false;
+  }
+}
+
 function renderSettings() {
   renderProfileChrome();
+  setUpdateStatus(`Versión instalada: ${APP_CHANNEL} · v${APP_VERSION}`);
   dom.peopleList.replaceChildren();
   state.people.forEach((person) => {
     const chip = element("span", "person-chip");
@@ -5456,6 +5575,8 @@ dom.exportBtn.addEventListener("click", exportData);
 dom.exportCsvBtn.addEventListener("click", exportCsv);
 dom.importBtn.addEventListener("click", () => dom.importFileInput.click());
 dom.importFileInput.addEventListener("change", () => importData(dom.importFileInput.files[0]));
+dom.checkUpdatesBtn?.addEventListener("click", () => void checkForAppUpdates({ interactive: true }));
+dom.openReleasesBtn?.addEventListener("click", () => void openBrowserUrl(GITHUB_RELEASES_URL));
 wireDriveUi();
 
 dom.profileHogarBtn?.addEventListener("click", () => void switchDataProfile("hogar"));
