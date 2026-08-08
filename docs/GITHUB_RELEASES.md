@@ -35,7 +35,10 @@ Eso crea/usa el tag `vX.Y.Z`, publica la Release y sube:
 - `Ilara-Finanzas-<versión>-Windows-x64-Setup.exe`
 - `SHA256SUMS.txt`
 
-Si la Release ya existe, solo actualiza los archivos (`--clobber`).
+Si la Release ya existe, actualiza las notas (UTF-8) y los archivos (`--clobber`).
+
+Las notas salen del bloque de `CHANGELOG.md` de esa versión, escritas a un archivo UTF-8
+(`--notes-file`) para que acentos y em dash no se rompan en Windows.
 
 ## Actualizar en la PC
 

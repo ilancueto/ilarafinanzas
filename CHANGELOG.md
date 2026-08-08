@@ -1,5 +1,36 @@
 # Historial de cambios
 
+## En desarrollo (sigue 3.9.9.10)
+
+Sin bump de versión hasta el próximo release.
+
+### Corregido
+- Notas de GitHub Releases en **UTF-8** (`publish-github-release.ps1` con `--notes-file`).
+
+### Confianza / mes cerrado
+- Guardas al modificar con mes cerrado (movimientos, previstos, tarjetas/resumen).
+
+### Drive
+- Estado multilínea (última sync relativa, cambios locales) y conflictos más claros.
+
+### UX (bloque 2)
+- Categorías en Inicio: **Ver todas / Ver menos**.
+- Desglose **por persona** en Inicio.
+- Filtros de Movimientos y Previstos **recordados** entre sesiones.
+- **CSV de este mes** desde Movimientos.
+- Historial reciente de respaldos en Ajustes (re-descarga de los últimos).
+
+### Actualizaciones (bloque 3)
+- Chequeo **automático al abrir** la app (sin molestar si estás al día).
+- **Banner** + botón «Descargar Setup nuevo» cuando hay Release más nueva.
+- «Después» oculta el aviso para esa versión (vuelve si sale otra).
+- Nota: instalador con un clic de descarga; updater 100% silencioso queda pendiente de firma.
+
+### Tarjetas / proyección (bloque 4)
+- Cuentas corrientes: auto-marca por nombre (CC / cuenta corriente) + copy más claro.
+- Desglose **cuotas · fijos · compras** en hero y detalle; cargos agrupados por tipo.
+- Proyección: toggle **Incluir tarjetas (plásticos)** y escenario **¿y si baja el ingreso? (−5%…−30%)**.
+
 ## 3.9.9.10 — Estable — 2026-08-07
 
 ### Añadido

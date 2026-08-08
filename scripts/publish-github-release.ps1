@@ -22,7 +22,7 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $Version) {
-  $packageJson = Get-Content -Raw -LiteralPath (Join-Path $projectRoot "package.json") | ConvertFrom-Json
+  $packageJson = Get-Content -Raw -Encoding utf8 -LiteralPath (Join-Path $projectRoot "package.json") | ConvertFrom-Json
   $Version = [string]$packageJson.version
 }
 
@@ -39,17 +39,22 @@ if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
   throw "No está el Setup: $setupPath`nCorré antes: npm run release:build"
 }
 
-# Notas desde CHANGELOG (bloque ## Version)
+# Notas desde CHANGELOG (bloque ## Version) — siempre UTF-8 sin BOM vía notes-file
+# (pasar --notes con acentos por argv en Windows suele mojibakear: "AÃ±adido", "â€"")
 $notes = "Ilara Finanzas $Version"
 $changelogPath = Join-Path $projectRoot "CHANGELOG.md"
 if (Test-Path -LiteralPath $changelogPath) {
-  $raw = Get-Content -LiteralPath $changelogPath -Raw
+  $raw = Get-Content -LiteralPath $changelogPath -Raw -Encoding utf8
   $pattern = "(?ms)^## $([regex]::Escape($Version))\b.*?(?=^## |\z)"
   $m = [regex]::Match($raw, $pattern)
   if ($m.Success) {
     $notes = $m.Value.Trim()
   }
 }
+
+$notesPath = Join-Path $env:TEMP "ilara-release-notes-$Version.md"
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($notesPath, $notes, $utf8NoBom)
 
 $releaseExists = $false
 try {
@@ -60,13 +65,15 @@ try {
 }
 
 if ($releaseExists) {
-  Write-Output "La release $tag ya existe. Subiendo/actualizando assets…"
+  Write-Output "La release $tag ya existe. Actualizando notas y assets…"
+  & gh release edit $tag --repo $Repo --notes-file $notesPath
+  if ($LASTEXITCODE -ne 0) { throw "gh release edit (notas) falló" }
   & gh release upload $tag $setupPath --repo $Repo --clobber
   if ($LASTEXITCODE -ne 0) { throw "gh release upload (setup) falló" }
   if (Test-Path -LiteralPath $sumsPath) {
     & gh release upload $tag $sumsPath --repo $Repo --clobber
   }
-  Write-Output "Assets actualizados en https://github.com/$Repo/releases/tag/$tag"
+  Write-Output "Actualizado: https://github.com/$Repo/releases/tag/$tag"
   exit 0
 }
 
@@ -82,7 +89,7 @@ $ghArgs = @(
   $setupPath,
   "--repo", $Repo,
   "--title", "Ilara Finanzas $Version",
-  "--notes", $notes
+  "--notes-file", $notesPath
 )
 if (Test-Path -LiteralPath $sumsPath) {
   $ghArgs = @(
@@ -91,7 +98,7 @@ if (Test-Path -LiteralPath $sumsPath) {
     $sumsPath,
     "--repo", $Repo,
     "--title", "Ilara Finanzas $Version",
-    "--notes", $notes
+    "--notes-file", $notesPath
   )
 }
 if ($Draft) { $ghArgs += "--draft" }

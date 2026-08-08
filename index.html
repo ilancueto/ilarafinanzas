@@ -66,6 +66,12 @@
           <span id="emergencyBannerCopy">Hay cambios fuera de SQLite. Revisá Ajustes → Copia de emergencia.</span>
           <button id="emergencyBannerSettingsBtn" class="secondary-btn profile-banner-btn" type="button">Ir a Ajustes</button>
         </div>
+        <div id="updateBanner" class="update-banner" hidden role="status">
+          <strong>Actualización disponible</strong>
+          <span id="updateBannerCopy">Hay una versión nueva en GitHub.</span>
+          <button id="updateBannerInstallBtn" class="primary-btn profile-banner-btn" type="button">Descargar Setup</button>
+          <button id="updateBannerLaterBtn" class="secondary-btn profile-banner-btn" type="button">Después</button>
+        </div>
         <header class="topbar">
           <div class="mobile-brand">
             <span class="brand-logo-shell brand-logo-mobile" aria-hidden="true"><img class="brand-logo" src="logo_ilara.png" alt="" /></span>
@@ -130,6 +136,17 @@
             <div id="actualSummary" class="actual-summary" aria-live="polite"></div>
           </article>
 
+          <article id="personBreakdownPanel" class="panel person-breakdown-panel" hidden>
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Hogar</p>
+                <h2>Por persona</h2>
+              </div>
+              <span class="actual-caption">Ingresos y gastos del mes activo</span>
+            </div>
+            <div id="personBreakdown" class="person-breakdown" aria-live="polite"></div>
+          </article>
+
           <div class="dashboard-grid">
             <article class="panel cash-panel">
               <div class="panel-heading inline-heading">
@@ -186,6 +203,7 @@
               <p class="heading-copy">Ingresos, gastos y cuotas reunidos en un solo lugar.</p>
             </div>
             <div class="page-heading-actions">
+              <button id="exportMonthCsvBtn" class="secondary-btn" type="button">CSV de este mes</button>
               <button id="copyPrevMonthBtn" class="secondary-btn" type="button">Copiar del mes anterior</button>
               <button class="primary-btn" type="button" data-add-movement>+ Nuevo movimiento</button>
             </div>
@@ -302,15 +320,32 @@
               <h1>Proyección</h1>
               <p class="heading-copy">Mes a mes y desglose de gastos. Tocá un mes o una categoría para explorar. No inventa sueldos futuros.</p>
             </div>
-            <label class="select-inline">
-              <span>Horizonte</span>
-              <select id="projectionMonthsSelect">
-                <option value="6">6 meses</option>
-                <option value="12">12 meses</option>
-                <option value="18">18 meses</option>
-                <option value="24">24 meses</option>
-              </select>
-            </label>
+            <div class="projection-heading-controls">
+              <label class="select-inline">
+                <span>Horizonte</span>
+                <select id="projectionMonthsSelect">
+                  <option value="6">6 meses</option>
+                  <option value="12">12 meses</option>
+                  <option value="18">18 meses</option>
+                  <option value="24">24 meses</option>
+                </select>
+              </label>
+              <label class="projection-toggle">
+                <input id="projectionIncludeCards" type="checkbox" />
+                <span>Incluir tarjetas (plásticos)</span>
+              </label>
+              <label class="select-inline projection-cut">
+                <span>¿Y si baja el ingreso?</span>
+                <select id="projectionIncomeCut">
+                  <option value="0">Sin recorte</option>
+                  <option value="5">−5%</option>
+                  <option value="10">−10%</option>
+                  <option value="15">−15%</option>
+                  <option value="20">−20%</option>
+                  <option value="30">−30%</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           <div id="projectionSummary" class="projection-summary"></div>
@@ -468,7 +503,7 @@
                 </div>
               </div>
               <div class="drive-status-row">
-                <p id="driveStatusText" class="drive-status">Drive no configurado.</p>
+                <p id="driveStatusText" class="drive-status" data-tone="neutral">Drive no configurado.</p>
                 <label class="drive-auto-toggle">
                   <input id="driveAutoSyncToggle" type="checkbox" checked />
                   <span>Sync automática</span>
@@ -503,8 +538,10 @@
               <p id="updateStatusText" class="drive-status">Versión instalada: se muestra al cargar.</p>
               <div class="data-actions">
                 <button id="checkUpdatesBtn" class="primary-btn" type="button">Buscar actualizaciones</button>
+                <button id="installUpdateBtn" class="primary-btn" type="button" hidden>Descargar Setup nuevo</button>
                 <button id="openReleasesBtn" class="secondary-btn" type="button">Ver Releases en GitHub</button>
               </div>
+              <p class="privacy-note">Al abrir se consulta GitHub en segundo plano. Si hay versión nueva, aparece un aviso. Instalar = bajar el Setup e instalar encima (tus datos no se borran). Updater 100% silencioso queda para más adelante (firma de instaladores).</p>
             </article>
 
             <article class="panel data-panel">
@@ -515,9 +552,14 @@
               </div>
               <div class="data-actions">
                 <button id="exportBtn" class="secondary-btn" type="button">Exportar copia</button>
-                <button id="exportCsvBtn" class="secondary-btn" type="button">Exportar CSV</button>
+                <button id="exportCsvBtn" class="secondary-btn" type="button">Exportar CSV (rango)</button>
                 <button id="importBtn" class="secondary-btn" type="button">Importar copia</button>
                 <input id="importFileInput" type="file" accept="application/json" hidden />
+              </div>
+              <div class="backup-history-block">
+                <p class="eyebrow">Historial reciente</p>
+                <p class="heading-copy backup-history-hint">Se listan los últimos respaldos de este perfil (cierre de mes, export, antes de Drive). Los más nuevos se pueden volver a bajar.</p>
+                <div id="backupHistoryList" class="backup-history-list"></div>
               </div>
               <p class="privacy-note">Sin Drive: todo queda solo en este equipo. Con Drive: la copia de sync va a <strong>tu</strong> Google Drive. Actualizaciones: instalador (Setup) en GitHub Releases; el portable es legacy. <span id="appVersion"></span></p>
             </article>
@@ -557,10 +599,10 @@
           <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" /></label>
           <label class="span-2 cards-cc-check">
             <input name="excludeFromCardTotals" type="checkbox" />
-            <span>Cuenta corriente (no sumar a tarjetas)</span>
+            <span>Cuenta corriente / no sumar al total de plásticos</span>
           </label>
         </div>
-        <p class="form-hint">Cierre y vencimiento son del ciclo/resumen actual (día + mes). Actualizalos en cada resumen; no son un día fijo eterno. Si es cuenta corriente, aparece en el apartado aparte y no suma al total de plásticos.</p>
+        <p class="form-hint">Cierre y vencimiento son del ciclo/resumen actual (día + mes). Actualizalos en cada resumen. Si marcás cuenta corriente (o el nombre parece “CC…” / “cuenta corriente”), va al apartado aparte y no suma a “Este mes en tarjetas” ni a la proyección de plásticos.</p>
         <div class="dialog-actions">
           <span class="action-spacer"></span>
           <button class="secondary-btn" type="button" data-close-card-dialog>Cancelar</button>

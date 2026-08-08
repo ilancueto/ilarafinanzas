@@ -51,6 +51,11 @@ const STORAGE_KEY = "ilara-finanzas-v3";
 const EMERGENCY_STORAGE_KEY_BASE = "ilara-finanzas-v3-emergency";
 const BACKUP_FORMAT = "ilara-finanzas-backup";
 const BACKUP_VERSION = 1;
+const BACKUP_HISTORY_KEY_BASE = "ilara-backup-history-v1";
+const BACKUP_HISTORY_MAX = 12;
+const BACKUP_HISTORY_KEEP_CONTENT = 3;
+const VIEW_FILTERS_KEY = "ilara-view-filters-v1";
+const UPDATE_DISMISS_KEY = "ilara-update-dismissed-v1";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const LEGACY_KEYS = ["trama-finanzas-v3", "finanzas-personales-app-v2", "finanzas-personales-app-v1"];
 /** Catálogo base de categorías (hogar AR/ES). Se fusiona al cargar con las del usuario. */
@@ -212,6 +217,8 @@ const dom = {
   monthHealth: document.querySelector("#monthHealth"),
   summaryGrid: document.querySelector("#summaryGrid"),
   actualSummary: document.querySelector("#actualSummary"),
+  personBreakdown: document.querySelector("#personBreakdown"),
+  personBreakdownPanel: document.querySelector("#personBreakdownPanel"),
   commitmentRate: document.querySelector("#commitmentRate"),
   cashFlowVisual: document.querySelector("#cashFlowVisual"),
   categoryBreakdown: document.querySelector("#categoryBreakdown"),
@@ -222,7 +229,9 @@ const dom = {
   movementStatusFilter: document.querySelector("#movementStatusFilter"),
   movementTotals: document.querySelector("#movementTotals"),
   movementList: document.querySelector("#movementList"),
+  exportMonthCsvBtn: document.querySelector("#exportMonthCsvBtn"),
   copyPrevMonthBtn: document.querySelector("#copyPrevMonthBtn"),
+  backupHistoryList: document.querySelector("#backupHistoryList"),
   dueSoonPanel: document.querySelector("#dueSoonPanel"),
   dueSoonList: document.querySelector("#dueSoonList"),
   projectionMonthsSelect: document.querySelector("#projectionMonthsSelect"),
@@ -262,6 +271,13 @@ const dom = {
   emergencyBanner: document.querySelector("#emergencyBanner"),
   emergencyBannerCopy: document.querySelector("#emergencyBannerCopy"),
   emergencyBannerSettingsBtn: document.querySelector("#emergencyBannerSettingsBtn"),
+  updateBanner: document.querySelector("#updateBanner"),
+  updateBannerCopy: document.querySelector("#updateBannerCopy"),
+  updateBannerInstallBtn: document.querySelector("#updateBannerInstallBtn"),
+  updateBannerLaterBtn: document.querySelector("#updateBannerLaterBtn"),
+  installUpdateBtn: document.querySelector("#installUpdateBtn"),
+  projectionIncludeCards: document.querySelector("#projectionIncludeCards"),
+  projectionIncomeCut: document.querySelector("#projectionIncomeCut"),
   emergencyPanel: document.querySelector("#emergencyPanel"),
   emergencyStatusCopy: document.querySelector("#emergencyStatusCopy"),
   emergencyApplyBtn: document.querySelector("#emergencyApplyBtn"),
@@ -352,6 +368,8 @@ let initializationWarning = "";
 /** @type {{ id: string, label: string, databaseFile: string, isSandbox: boolean, isActive: boolean } | null} */
 let dataProfile = null;
 let profileBusy = false;
+/** Dashboard: desglose de categorías expandido (top 5 vs todas). */
+let categoryBreakdownExpanded = false;
 
 function emergencyStorageKey() {
   const profileId = dataProfile?.id || "hogar";
@@ -360,6 +378,17 @@ function emergencyStorageKey() {
 
 function isSandboxProfile() {
   return Boolean(dataProfile?.isSandbox);
+}
+
+function isMonthClosed(monthKey = state.activeMonth) {
+  return Boolean(monthKey && state.closedMonths[monthKey]);
+}
+
+/** @returns {true} si el mes está abierto y se puede modificar */
+function requireOpenMonth(monthKey = state.activeMonth, message = "Reabrí el mes antes de modificar") {
+  if (!isMonthClosed(monthKey)) return true;
+  showToast(message);
+  return false;
 }
 
 function createDefaultState() {
@@ -468,13 +497,27 @@ function daysUntilIsoDate(isoDate, fromDate = new Date()) {
   return Math.round((target - start) / 86400000);
 }
 
-/** Detecta nombres tipo “CC Mara” para migrar a cuenta corriente. */
+/** Heurística de nombre: CC / cuenta corriente (ej. “CC Mara”, “Cta cte”). */
+function nameLooksLikeCuentaCorriente(name) {
+  const n = String(name || "")
+    .toLocaleLowerCase("es")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim();
+  if (!n) return false;
+  return (
+    n.includes("cc mara")
+    || n.includes("cuenta corriente")
+    || n.includes("cta cte")
+    || n.includes("cuenta cte")
+    || /\bcc\b/.test(n)
+    || n.startsWith("cc ")
+    || n.includes(" cc ")
+  );
+}
+
 function nameLooksLikeCcMara(name) {
-  const n = String(name || "").toLocaleLowerCase("es").normalize("NFD").replace(/\p{M}/gu, "");
-  return n.includes("cc mara")
-    || n.includes("cuenta corriente mara")
-    || n.includes("cta cte mara")
-    || n.includes("cuenta cte mara");
+  return nameLooksLikeCuentaCorriente(name);
 }
 
 function isCuentaCorrienteCard(card) {
@@ -501,10 +544,10 @@ function normalizeCreditCard(card) {
   if (!closingDate && legacyClosing) closingDate = legacyDayToNextIsoDate(legacyClosing);
   if (!dueDate && legacyDue) dueDate = legacyDayToNextIsoDate(legacyDue);
   const limitCents = resolveStoredCents(card?.limitCents, card?.limit, { positiveOnly: true });
-  // Flag explícito gana; si no viene, auto-detecta “CC Mara”.
+  // Flag explícito gana; si no viene, auto-detecta CC / cuenta corriente.
   const excludeFromCardTotals = typeof card?.excludeFromCardTotals === "boolean"
     ? card.excludeFromCardTotals
-    : nameLooksLikeCcMara(name);
+    : nameLooksLikeCuentaCorriente(name);
   return {
     id,
     name,
@@ -1402,29 +1445,89 @@ let driveBusy = false;
 let drivePushTimer = null;
 let driveAvailable = true;
 
-function formatDriveSyncLabel(status) {
-  if (isSandboxProfile()) {
-    return "Drive pausado: estás en Perfil de prueba. Cambiá a Hogar para sincronizar.";
+/** Tiempo relativo legible para “última sync” (es-AR). */
+function formatRelativeTime(iso) {
+  if (!iso) return "";
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) {
+    return String(iso).slice(0, 16).replace("T", " ");
   }
-  if (!status) return "Drive no disponible en este entorno.";
+  const diffMs = Date.now() - then.getTime();
+  const abs = Math.abs(diffMs);
+  const mins = Math.round(abs / 60000);
+  if (mins < 1) return "hace un momento";
+  if (mins < 60) return `hace ${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.round(hours / 24);
+  if (days < 14) return `hace ${days} día${days === 1 ? "" : "s"}`;
+  return then.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Etiqueta + tono visual para el estado de Drive.
+ * @returns {{ text: string, tone: "neutral" | "ok" | "warn" | "danger" | "muted" }}
+ */
+function describeDriveSync(status) {
+  if (isSandboxProfile()) {
+    return {
+      text: "Drive pausado en Perfil de prueba. Cambiá a Hogar para sincronizar datos reales.",
+      tone: "muted",
+    };
+  }
+  if (!status) {
+    return { text: "Drive no disponible en este entorno.", tone: "muted" };
+  }
   if (!status.configured) {
-    return "Sin configurar: pegá Client ID y Secret (una sola vez) y guardá.";
+    return {
+      text: "Sin configurar: pegá Client ID y Secret (una sola vez) y guardá.",
+      tone: "neutral",
+    };
   }
   if (!status.connected) {
-    return status.message
-      ? `Listo para conectar: ${status.message}`
-      : "Credenciales OK. Tocá «Conectar Google» y autorizá en el navegador.";
+    return {
+      text: status.message
+        ? `Listo para conectar · ${status.message}`
+        : "Credenciales OK. Tocá «Conectar Google» y autorizá en el navegador.",
+      tone: "neutral",
+    };
   }
-  const bits = ["Conectado a Google"];
-  if (status.email) bits.push(status.email);
-  bits.push(status.autoSync ? "sync automática ON" : "sync automática OFF");
-  bits.push(status.localDirty ? "hay cambios locales por subir" : "al día con la nube");
+
+  const lines = [];
+  lines.push(status.email ? `Conectado · ${status.email}` : "Conectado a Google");
+
+  if (status.localDirty) {
+    lines.push("Esta PC tiene cambios que aún no están en Drive");
+  } else {
+    lines.push("Local y Drive alineados");
+  }
+
   if (status.lastSyncAt) {
-    const when = String(status.lastSyncAt).slice(0, 16).replace("T", " ");
-    bits.push(`última sync ${when}`);
+    lines.push(`Última sync: ${formatRelativeTime(status.lastSyncAt)}`);
+  } else {
+    lines.push("Todavía no hubo una sync completa en esta PC");
   }
-  if (status.message && !status.message.includes("OK")) bits.push(status.message);
-  return bits.join(" · ");
+
+  lines.push(status.autoSync ? "Sync automática: ON" : "Sync automática: OFF (solo al tocar «Sincronizar ahora»)");
+
+  if (status.message && !/OK/i.test(status.message) && !status.message.includes("conectado")) {
+    lines.push(status.message);
+  }
+
+  let tone = "ok";
+  if (status.localDirty) tone = "warn";
+  if (status.message && /conflict|error|fall/i.test(status.message)) tone = "danger";
+
+  return { text: lines.join("\n"), tone };
+}
+
+function formatDriveSyncLabel(status) {
+  return describeDriveSync(status).text.replace(/\n/g, " · ");
 }
 
 function hasEmergencyCopy() {
@@ -1528,7 +1631,15 @@ async function discardEmergencyCopy() {
 function renderDriveStatus(status = driveStatus) {
   driveStatus = status;
   if (!dom.driveStatusText) return;
-  dom.driveStatusText.textContent = formatDriveSyncLabel(status);
+  const described = describeDriveSync(status);
+  // Varias líneas: legible en Ajustes (no un solo string interminable).
+  dom.driveStatusText.textContent = described.text;
+  dom.driveStatusText.dataset.tone = described.tone;
+  if (driveBusy) {
+    dom.driveStatusText.dataset.busy = "true";
+  } else {
+    delete dom.driveStatusText.dataset.busy;
+  }
   if (dom.driveAutoSyncToggle && status) {
     dom.driveAutoSyncToggle.checked = Boolean(status.autoSync);
   }
@@ -1536,17 +1647,17 @@ function renderDriveStatus(status = driveStatus) {
     dom.driveSetupBlock.hidden = Boolean(status?.configured && status?.connected);
   }
   if (dom.driveConnectBtn) {
-    dom.driveConnectBtn.disabled = !status?.configured || driveBusy;
+    dom.driveConnectBtn.disabled = !status?.configured || driveBusy || isSandboxProfile();
     dom.driveConnectBtn.textContent = status?.connected ? "Reconectar Google" : "Conectar Google";
   }
   if (dom.driveSyncNowBtn) {
-    dom.driveSyncNowBtn.disabled = !status?.connected || driveBusy;
+    dom.driveSyncNowBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
   }
   if (dom.driveDisconnectBtn) {
-    dom.driveDisconnectBtn.disabled = !status?.connected || driveBusy;
+    dom.driveDisconnectBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
   }
   if (dom.driveSaveCredsBtn) {
-    dom.driveSaveCredsBtn.disabled = driveBusy;
+    dom.driveSaveCredsBtn.disabled = driveBusy || isSandboxProfile();
   }
 }
 
@@ -1621,7 +1732,9 @@ async function runDrivePull({ force = false, interactive = false } = {}) {
       if (interactive) {
         const ok = await confirmAction({
           title: "Aplicar copia de Google Drive",
-          copy: "Hay una versión en Drive. ¿Reemplazar los datos de esta PC?",
+          copy:
+            "Drive tiene una copia más nueva. Si seguís, los datos de esta PC se reemplazan "
+            + "(antes se guarda un respaldo «antes-de-drive»).",
           details: summarizeBackup(parseBackup(JSON.parse(result.content))),
           confirmLabel: "Usar copia de Drive",
         });
@@ -1631,38 +1744,41 @@ async function runDrivePull({ force = false, interactive = false } = {}) {
         }
       }
       await applyDriveContent(result.content, result.remoteModifiedTime, { silent: !interactive });
-      if (interactive) showToast("Copia de Drive aplicada");
+      if (interactive) showToast("Copia de Drive aplicada (respaldo local guardado)");
       else showToast("Se actualizó desde Google Drive");
       return;
     }
     if (result.action === "conflict" && result.content) {
       const useRemote = await confirmAction({
-        title: "Conflicto con Google Drive",
-        copy: "Esta PC y Drive tienen cambios distintos. ¿Querés quedarte con la de Drive? (Cancelar mantiene esta PC y podés forzar subida con “Sincronizar ahora”.)",
+        title: "Conflicto: esta PC ≠ Drive",
+        copy:
+          "Hay cambios distintos en esta PC y en Google Drive. "
+          + "«Usar Drive» reemplaza lo local (con respaldo previo). "
+          + "Cancelar mantiene esta PC; después podés subir con «Sincronizar ahora».",
         details: summarizeBackup(parseBackup(JSON.parse(result.content))),
         confirmLabel: "Usar Drive",
       });
       if (useRemote) {
         await applyDriveContent(result.content, result.remoteModifiedTime);
-        showToast("Se aplicó la copia de Drive");
+        showToast("Se aplicó la copia de Drive (respaldo local guardado)");
       } else {
         renderDriveStatus(result.status);
-        showToast("Se mantuvieron los datos de esta PC");
+        showToast("Se mantuvieron los datos de esta PC · podés subir con «Sincronizar ahora»");
       }
       return;
     }
     if (result.action === "local_ahead" && interactive) {
-      showToast("Hay cambios locales: se van a subir a Drive");
+      showToast("Esta PC está adelantada: subiendo cambios a Drive…");
       await runDrivePush({ force: false, interactive: true });
       return;
     }
     if (interactive && result.action === "empty") {
-      showToast("Todavía no hay copia en Drive; se subirá la de esta PC");
+      showToast("Drive vacío: se sube la copia de esta PC");
       await runDrivePush({ force: true, interactive: true });
       return;
     }
     if (interactive && result.action === "noop") {
-      showToast("Ya estabas al día con Drive");
+      showToast("Al día: esta PC y Drive tienen la misma copia");
     }
     renderDriveStatus(result.status);
   } catch (error) {
@@ -1698,24 +1814,30 @@ async function runDrivePush({ force = false, interactive = false } = {}) {
     if (result.action === "conflict") {
       if (interactive) {
         const overwrite = await confirmAction({
-          title: "Conflicto al subir",
-          copy: "Drive tiene otra versión. ¿Subir esta PC y pisar la de Drive?",
-          details: ["Se recomienda bajar primero si no estás seguro."],
+          title: "Conflicto al subir a Drive",
+          copy:
+            "Drive tiene otra versión que no coincide con esta PC. "
+            + "Si pisás, se pierde lo que haya solo en Drive (salvo que lo hayas bajado antes).",
+          details: [
+            "Si no estás seguro: cancelá, tocá «Sincronizar ahora» y elegí «Usar Drive», o exportá un backup local.",
+          ],
           confirmLabel: "Pisar Drive con esta PC",
           danger: true,
         });
         if (overwrite) {
           const forced = await drivePush(content, true);
           driveStatus = forced.status;
-          showToast("Copia de esta PC subida a Drive");
+          showToast("Esta PC se subió y pisó la copia de Drive");
+        } else {
+          showToast("No se subió · Drive no se tocó");
         }
       }
       renderDriveStatus(driveStatus);
       return;
     }
     if (interactive) {
-      if (result.action === "uploaded") showToast("Subido a Google Drive");
-      else if (result.action === "noop") showToast("Drive ya tenía esta copia");
+      if (result.action === "uploaded") showToast("Subido a Google Drive · al día");
+      else if (result.action === "noop") showToast("Drive ya tenía esta misma copia");
     }
     renderDriveStatus(result.status);
   } catch (error) {
@@ -1866,13 +1988,62 @@ function buildBackupEnvelope(snapshot) {
   };
 }
 
-function downloadBackup(snapshot = state, label = "respaldo") {
-  const content = JSON.stringify(buildBackupEnvelope(snapshot), null, 2);
+function backupHistoryStorageKey() {
+  return `${BACKUP_HISTORY_KEY_BASE}:${dataProfile?.id || "hogar"}`;
+}
+
+function loadBackupHistory() {
+  try {
+    const raw = localStorage.getItem(backupHistoryStorageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBackupHistory(list) {
+  try {
+    localStorage.setItem(backupHistoryStorageKey(), JSON.stringify(list));
+  } catch (error) {
+    // Si se llena la cuota, reintentar solo con metadatos.
+    try {
+      const metaOnly = list.map(({ content, ...meta }) => meta).slice(0, BACKUP_HISTORY_MAX);
+      localStorage.setItem(backupHistoryStorageKey(), JSON.stringify(metaOnly));
+    } catch {
+      console.warn("No se pudo guardar historial de respaldos.", error);
+    }
+  }
+}
+
+/** Registra un respaldo en el historial local del perfil (últimos N, con contenido de los más recientes). */
+function recordBackupHistory(snapshot, label, content) {
+  const entry = {
+    id: createId(),
+    label: sanitizeText(label, "respaldo"),
+    createdAt: new Date().toISOString(),
+    activeMonth: isValidMonthKey(snapshot?.activeMonth) ? snapshot.activeMonth : state.activeMonth,
+    people: Array.isArray(snapshot?.people) ? snapshot.people.length : 0,
+    transactions: Array.isArray(snapshot?.transactions) ? snapshot.transactions.length : 0,
+    sizeBytes: content?.length || 0,
+    content: content || "",
+  };
+  let list = [entry, ...loadBackupHistory().filter((item) => item?.id !== entry.id)];
+  list = list.slice(0, BACKUP_HISTORY_MAX).map((item, index) => {
+    if (index < BACKUP_HISTORY_KEEP_CONTENT && item.content) return item;
+    const { content: _drop, ...meta } = item;
+    return meta;
+  });
+  saveBackupHistory(list);
+}
+
+function downloadJsonFile(content, filename) {
   const blob = new Blob([content], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `ilara-${label}-${formatMonthKey(new Date())}.json`;
+  link.download = filename;
   link.hidden = true;
   document.body.append(link);
   link.click();
@@ -1880,6 +2051,72 @@ function downloadBackup(snapshot = state, label = "respaldo") {
     URL.revokeObjectURL(url);
     link.remove();
   }, 0);
+}
+
+function downloadBackup(snapshot = state, label = "respaldo") {
+  const content = JSON.stringify(buildBackupEnvelope(snapshot), null, 2);
+  const safeLabel = sanitizeText(label, "respaldo").replace(/[^\w.-]+/g, "-") || "respaldo";
+  downloadJsonFile(content, `ilara-${safeLabel}-${formatMonthKey(new Date())}.json`);
+  recordBackupHistory(snapshot, safeLabel, content);
+  renderBackupHistory();
+}
+
+function redownloadBackupHistoryEntry(entryId) {
+  const entry = loadBackupHistory().find((item) => item.id === entryId);
+  if (!entry?.content) {
+    showToast("Ese respaldo ya no está en caché; exportá uno nuevo");
+    return;
+  }
+  const safeLabel = sanitizeText(entry.label, "respaldo").replace(/[^\w.-]+/g, "-") || "respaldo";
+  const stamp = String(entry.createdAt || "").slice(0, 10) || formatMonthKey(new Date());
+  downloadJsonFile(entry.content, `ilara-${safeLabel}-${stamp}.json`);
+  showToast("Respaldo descargado de nuevo");
+}
+
+function renderBackupHistory() {
+  if (!dom.backupHistoryList) return;
+  const list = loadBackupHistory();
+  dom.backupHistoryList.replaceChildren();
+  if (!list.length) {
+    dom.backupHistoryList.append(
+      element("p", "backup-history-empty", "Todavía no hay respaldos registrados en este perfil."),
+    );
+    return;
+  }
+  list.forEach((entry) => {
+    const row = element("div", "backup-history-row");
+    const copy = element("div", "backup-history-copy");
+    const when = entry.createdAt
+      ? formatRelativeTime(entry.createdAt)
+      : "sin fecha";
+    const sizeKb = entry.sizeBytes
+      ? `${Math.max(1, Math.round(entry.sizeBytes / 1024))} KB`
+      : "";
+    copy.append(
+      element("strong", "", entry.label || "respaldo"),
+      element(
+        "small",
+        "",
+        [
+          when,
+          entry.activeMonth ? formatMonthLabel(entry.activeMonth, true) : "",
+          `${entry.transactions || 0} mov.`,
+          sizeKb,
+        ].filter(Boolean).join(" · "),
+      ),
+    );
+    const actions = element("div", "backup-history-actions");
+    if (entry.content) {
+      const downloadBtn = element("button", "text-btn", "Descargar");
+      downloadBtn.type = "button";
+      downloadBtn.addEventListener("click", () => redownloadBackupHistoryEntry(entry.id));
+      actions.append(downloadBtn);
+    } else {
+      actions.append(element("small", "backup-history-expired", "Solo registro"));
+    }
+    row.append(copy, actions);
+    dom.backupHistoryList.append(row);
+  });
 }
 
 function parseBackup(parsed) {
@@ -2094,6 +2331,7 @@ function renderDashboard() {
   dom.cashFlowVisual.append(track, labels);
 
   renderCategoryBreakdown(totals.expenses);
+  renderPersonBreakdown(totals);
   renderDueSoon(totals);
   // Últimos cargados del mes (por createdAt), sin tilde de pago en el home.
   const recentThisMonth = [...totals.occurrences]
@@ -2114,6 +2352,77 @@ function renderDashboard() {
   });
   renderMiniForecast();
   renderBudgetProgress(totals);
+}
+
+/** Totales del mes agrupados por persona (para el home). */
+function personTotalsFromOccurrences(occurrences) {
+  const map = new Map();
+  (occurrences || []).forEach((item) => {
+    const person = sanitizeText(item.person, "Compartido") || "Compartido";
+    if (!map.has(person)) {
+      map.set(person, {
+        person,
+        incomeCents: 0,
+        expenseCents: 0,
+        receivedCents: 0,
+        paidCents: 0,
+        count: 0,
+      });
+    }
+    const row = map.get(person);
+    row.count += 1;
+    if (item.kind === "income") {
+      row.incomeCents += item.amountThisMonthCents;
+      if (item.status === "paid") row.receivedCents += item.amountThisMonthCents;
+    } else {
+      row.expenseCents += item.amountThisMonthCents;
+      if (item.status === "paid") row.paidCents += item.amountThisMonthCents;
+    }
+  });
+  return [...map.values()].sort((a, b) => {
+    const aTotal = a.incomeCents + a.expenseCents;
+    const bTotal = b.incomeCents + b.expenseCents;
+    return bTotal - aTotal || a.person.localeCompare(b.person, "es");
+  });
+}
+
+function renderPersonBreakdown(totals) {
+  if (!dom.personBreakdown || !dom.personBreakdownPanel) return;
+  const rows = personTotalsFromOccurrences(totals?.occurrences);
+  if (!rows.length) {
+    dom.personBreakdownPanel.hidden = true;
+    dom.personBreakdown.replaceChildren();
+    return;
+  }
+  dom.personBreakdownPanel.hidden = false;
+  dom.personBreakdown.replaceChildren();
+  rows.forEach((row) => {
+    const card = element("article", "person-breakdown-card");
+    const plan = row.incomeCents - row.expenseCents;
+    const actual = row.receivedCents - row.paidCents;
+    card.append(
+      element("strong", "person-breakdown-name", row.person),
+      element(
+        "p",
+        "person-breakdown-meta",
+        `${row.count} mov. · plan ${formatCurrency(plan)} · real ${formatCurrency(actual)}`,
+      ),
+    );
+    const grid = element("div", "person-breakdown-grid");
+    [
+      ["Ingresos", formatCurrency(row.incomeCents), "income"],
+      ["Gastos", formatCurrency(row.expenseCents), "expense"],
+      ["Cobrado", formatCurrency(row.receivedCents), "income"],
+      ["Pagado", formatCurrency(row.paidCents), "expense"],
+    ].forEach(([label, value, tone]) => {
+      const cell = element("div", "person-breakdown-stat");
+      cell.dataset.tone = tone;
+      cell.append(element("span", "", label), element("strong", "", value));
+      grid.append(cell);
+    });
+    card.append(grid);
+    dom.personBreakdown.append(card);
+  });
 }
 
 function renderDueSoon(totals) {
@@ -2204,14 +2513,20 @@ function renderBudgetProgress(totals) {
 function renderCategoryBreakdown(expenses) {
   dom.categoryBreakdown.replaceChildren();
   if (!expenses.length) {
+    categoryBreakdownExpanded = false;
     dom.categoryBreakdown.append(emptyState("Sin gastos todav\u00eda", "Cuando carguen uno, ac\u00e1 ver\u00e1n c\u00f3mo se distribuye."));
     return;
   }
   const categories = new Map();
   expenses.forEach((item) => categories.set(item.category, (categories.get(item.category) || 0) + item.amountThisMonthCents));
-  const sorted = [...categories.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const sorted = [...categories.entries()].sort((a, b) => b[1] - a[1]);
+  const previewLimit = 5;
+  const hasMore = sorted.length > previewLimit;
+  const visible = categoryBreakdownExpanded || !hasMore
+    ? sorted
+    : sorted.slice(0, previewLimit);
   const max = sorted[0][1];
-  sorted.forEach(([category, amount]) => {
+  visible.forEach(([category, amount]) => {
     const row = element("div", "category-row");
     const head = element("div", "category-head");
     head.append(element("span", "", category), element("strong", "", formatCurrency(amount)));
@@ -2223,6 +2538,25 @@ function renderCategoryBreakdown(expenses) {
     row.append(head, bar);
     dom.categoryBreakdown.append(row);
   });
+  if (hasMore) {
+    const toggle = element(
+      "button",
+      "text-btn category-breakdown-toggle",
+      categoryBreakdownExpanded
+        ? "Ver menos"
+        : `Ver todas (${sorted.length})`,
+    );
+    toggle.type = "button";
+    toggle.setAttribute(
+      "aria-expanded",
+      categoryBreakdownExpanded ? "true" : "false",
+    );
+    toggle.addEventListener("click", () => {
+      categoryBreakdownExpanded = !categoryBreakdownExpanded;
+      renderCategoryBreakdown(expenses);
+    });
+    dom.categoryBreakdown.append(toggle);
+  }
 }
 
 function renderMiniForecast() {
@@ -2370,7 +2704,22 @@ const projectionUi = {
   selectedMonthKey: null,
   selectedCategory: null,
   expenseFilter: "all", // all | monthly | installment | one-time
+  includeCards: false,
+  incomeCutPercent: 0,
 };
+
+/** Carga estimada de plásticos (sin CC) para un mes de proyección. */
+function projectionCardsLoadCents(monthKey) {
+  return getAllCardsMonthLoad(monthKey, { includeExcluded: false }).totalArs || 0;
+}
+
+/** Ingreso del mes con recorte de escenario (“¿y si baja el sueldo?”). */
+function projectionIncomeCents(month, cutPercent = projectionUi.incomeCutPercent) {
+  const base = month?.totalIncomeCents || 0;
+  const cut = Math.min(90, Math.max(0, Number(cutPercent) || 0));
+  if (!cut) return base;
+  return Math.round(base * (1 - cut / 100));
+}
 
 function scheduleTypeLabel(type) {
   if (type === "monthly") return "Mensual";
@@ -2442,30 +2791,64 @@ function renderProjection() {
   const selectedMonth = projection.find((month) => month.monthKey === projectionUi.selectedMonthKey)
     || projection[0];
 
-  const monthsWithExpense = projection.filter((month) => month.totalExpenseCents > 0);
+  const cut = projectionUi.incomeCutPercent;
+  const withCards = projectionUi.includeCards;
+  const enriched = projection.map((month) => {
+    const incomeCents = projectionIncomeCents(month, cut);
+    const cardsCents = withCards ? projectionCardsLoadCents(month.monthKey) : 0;
+    const homeExpenseCents = month.totalExpenseCents;
+    const expenseCents = homeExpenseCents + cardsCents;
+    return {
+      ...month,
+      incomeCents,
+      homeExpenseCents,
+      cardsCents,
+      expenseCents,
+      netCents: incomeCents - expenseCents,
+    };
+  });
+  const selectedEnriched = enriched.find((month) => month.monthKey === selectedMonth.monthKey)
+    || enriched[0];
+
+  const monthsWithExpense = enriched.filter((month) => month.expenseCents > 0);
   const avgExpenseCents = monthsWithExpense.length
     ? Math.round(
-      monthsWithExpense.reduce((sum, month) => sum + month.totalExpenseCents, 0)
+      monthsWithExpense.reduce((sum, month) => sum + month.expenseCents, 0)
       / monthsWithExpense.length,
     )
     : 0;
-  const monthsWithoutIncome = projection.filter((month) => month.totalIncomeCents <= 0).length;
+  const monthsWithoutIncome = enriched.filter((month) => month.incomeCents <= 0).length;
   const selectedExpenses = filterExpensesForProjection(selectedMonth.expenses);
-  const selectedExpenseTotal = selectedExpenses.reduce((sum, item) => sum + item.amountThisMonthCents, 0);
+  const selectedExpenseTotal = selectedExpenses.reduce((sum, item) => sum + item.amountThisMonthCents, 0)
+    + (selectedEnriched?.cardsCents || 0);
   const categoryCount = categoryTotalsFromExpenses(selectedExpenses).length;
+
+  if (dom.projectionIncludeCards) dom.projectionIncludeCards.checked = withCards;
+  if (dom.projectionIncomeCut) dom.projectionIncomeCut.value = String(cut || 0);
 
   dom.projectionSummary.replaceChildren();
   [
     [
       "Gasto del mes",
       formatCurrency(selectedExpenseTotal),
-      formatMonthLabel(selectedMonth.monthKey),
-      selectedMonth.totalExpenseCents > selectedMonth.totalIncomeCents && selectedMonth.totalIncomeCents > 0
+      [
+        formatMonthLabel(selectedMonth.monthKey),
+        withCards && selectedEnriched?.cardsCents
+          ? `hogar ${formatCurrency(selectedEnriched.homeExpenseCents)} + tarjetas ${formatCurrency(selectedEnriched.cardsCents)}`
+          : null,
+      ].filter(Boolean).join(" · "),
+      selectedEnriched.expenseCents > selectedEnriched.incomeCents && selectedEnriched.incomeCents > 0
         ? "negative"
         : "",
     ],
     [
-      "Promedio / mes",
+      "Ingreso del mes",
+      formatCurrency(selectedEnriched.incomeCents),
+      cut ? `Escenario −${cut}% sobre lo cargado` : "Sin recorte de escenario",
+      "",
+    ],
+    [
+      "Promedio gasto / mes",
       formatCurrency(avgExpenseCents),
       monthsWithExpense.length
         ? `En ${monthsWithExpense.length} mes${monthsWithExpense.length === 1 ? "" : "es"} con gasto`
@@ -2473,20 +2856,18 @@ function renderProjection() {
       "",
     ],
     [
-      "Categorías",
-      String(categoryCount),
-      selectedExpenses.length
-        ? `${selectedExpenses.length} gasto${selectedExpenses.length === 1 ? "" : "s"} en el desglose`
-        : "Sin gastos con este filtro",
-      "",
-    ],
-    [
-      "Sin ingreso cargado",
-      String(monthsWithoutIncome),
-      monthsWithoutIncome
-        ? "Meses del horizonte sin sueldo/ingreso"
-        : "Todos los meses tienen ingreso",
-      monthsWithoutIncome ? "negative" : "",
+      cut || withCards ? "Balance escenario" : "Sin ingreso cargado",
+      cut || withCards
+        ? formatCurrency(selectedEnriched.netCents)
+        : String(monthsWithoutIncome),
+      cut || withCards
+        ? (selectedEnriched.netCents >= 0 ? "Ingreso − gasto (con escenario)" : "Queda en rojo en este corte")
+        : (monthsWithoutIncome
+          ? "Meses del horizonte sin sueldo/ingreso"
+          : "Todos los meses tienen ingreso"),
+      (cut || withCards)
+        ? (selectedEnriched.netCents < 0 ? "negative" : "")
+        : (monthsWithoutIncome ? "negative" : ""),
     ],
   ].forEach(([label, value, copy, tone]) => {
     const card = element("article", "projection-stat");
@@ -2498,7 +2879,7 @@ function renderProjection() {
   // --- Chart: income vs expense per month (clickable) ---
   const maxValue = Math.max(
     1,
-    ...projection.flatMap((month) => [month.totalIncomeCents, month.totalExpenseCents]),
+    ...enriched.flatMap((month) => [month.incomeCents, month.expenseCents]),
   );
   dom.projectionChart.replaceChildren();
   dom.projectionChart.setAttribute("role", "list");
@@ -2506,21 +2887,24 @@ function renderProjection() {
     "aria-label",
     "Ingresos y gastos por mes. Hacé clic en un mes para ver el desglose de gastos.",
   );
-  projection.forEach((month) => {
+  enriched.forEach((month) => {
     const group = element("button", "chart-month");
     group.type = "button";
     group.setAttribute("role", "listitem");
     if (month.monthKey === selectedMonth.monthKey) group.dataset.active = "true";
     group.setAttribute(
       "aria-label",
-      `${formatMonthLabel(month.monthKey)}: ingresos ${formatCurrency(month.totalIncomeCents)}, gastos ${formatCurrency(month.totalExpenseCents)}`,
+      `${formatMonthLabel(month.monthKey)}: ingresos ${formatCurrency(month.incomeCents)}, gastos ${formatCurrency(month.expenseCents)}`,
     );
-    group.title = `${formatMonthLabel(month.monthKey)}\n+ ${formatCurrency(month.totalIncomeCents)}\n− ${formatCurrency(month.totalExpenseCents)}\nClic para desglosar`;
+    const cardBit = month.cardsCents
+      ? `\nTarjetas est. ${formatCurrency(month.cardsCents)}`
+      : "";
+    group.title = `${formatMonthLabel(month.monthKey)}\n+ ${formatCurrency(month.incomeCents)}\n− ${formatCurrency(month.expenseCents)}${cardBit}\nClic para desglosar`;
     const bars = element("div", "chart-bars");
     const incomeBar = element("span", "chart-bar income-bar");
     const expenseBar = element("span", "chart-bar expense-bar");
-    incomeBar.style.height = `${Math.max((month.totalIncomeCents / maxValue) * 100, month.totalIncomeCents ? 3 : 0)}%`;
-    expenseBar.style.height = `${Math.max((month.totalExpenseCents / maxValue) * 100, month.totalExpenseCents ? 3 : 0)}%`;
+    incomeBar.style.height = `${Math.max((month.incomeCents / maxValue) * 100, month.incomeCents ? 3 : 0)}%`;
+    expenseBar.style.height = `${Math.max((month.expenseCents / maxValue) * 100, month.expenseCents ? 3 : 0)}%`;
     bars.append(incomeBar, expenseBar);
     group.append(bars, element("small", "", formatMonthLabel(month.monthKey, true)));
     group.addEventListener("click", () => selectProjectionMonth(month.monthKey));
@@ -2546,11 +2930,21 @@ function renderProjection() {
 
   if (dom.projectionBreakdownTitle) {
     dom.projectionBreakdownTitle.textContent =
-      `Gastos · ${formatMonthLabel(selectedMonth.monthKey)}`;
+      `Gastos · ${formatMonthLabel(selectedMonth.monthKey)}`
+      + (withCards ? " (+ tarjetas est.)" : "")
+      + (cut ? ` · ingreso −${cut}%` : "");
   }
 
   // --- Category bars ---
   const categories = categoryTotalsFromExpenses(selectedExpenses);
+  if (withCards && selectedEnriched?.cardsCents > 0) {
+    categories.push({
+      category: "Tarjetas (estimado plásticos)",
+      cents: selectedEnriched.cardsCents,
+      isCards: true,
+    });
+    categories.sort((a, b) => b.cents - a.cents || a.category.localeCompare(b.category, "es"));
+  }
   const maxCat = Math.max(1, ...categories.map((item) => item.cents));
   if (dom.projectionBreakdown) {
     dom.projectionBreakdown.replaceChildren();
@@ -2563,7 +2957,9 @@ function renderProjection() {
       );
     } else {
       categories.forEach((row, index) => {
-        const color = EXPENSE_CHART_COLORS[index % EXPENSE_CHART_COLORS.length];
+        const color = row.isCards
+          ? "#0f3d4c"
+          : EXPENSE_CHART_COLORS[index % EXPENSE_CHART_COLORS.length];
         const pct = Math.round((row.cents / selectedExpenseTotal) * 100) || 0;
         const barRow = element("button", "expense-bar-row");
         barRow.type = "button";
@@ -2587,7 +2983,12 @@ function renderProjection() {
           element("small", "", `${pct}%`),
         );
         barRow.append(label, track, meta);
-        barRow.addEventListener("click", () => selectProjectionCategory(row.category));
+        if (!row.isCards) {
+          barRow.addEventListener("click", () => selectProjectionCategory(row.category));
+        } else {
+          barRow.disabled = true;
+          barRow.title = "Carga de plásticos (sin cuentas corrientes). No es un resumen generado en Movimientos.";
+        }
         dom.projectionBreakdown.append(barRow);
       });
     }
@@ -2835,8 +3236,68 @@ function setUpdateStatus(text) {
   if (dom.updateStatusText) dom.updateStatusText.textContent = text;
 }
 
+/** @type {{ version: string, downloadUrl: string, setupName: string, tag: string } | null} */
+let pendingUpdate = null;
+
+function loadDismissedUpdateVersion() {
+  try {
+    return String(localStorage.getItem(UPDATE_DISMISS_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function dismissPendingUpdate(version) {
+  try {
+    if (version) localStorage.setItem(UPDATE_DISMISS_KEY, String(version));
+  } catch {
+    /* ignore */
+  }
+  renderUpdateChrome();
+}
+
+function clearDismissedUpdateIfStale(remoteVersion) {
+  const dismissed = loadDismissedUpdateVersion();
+  if (dismissed && remoteVersion && dismissed !== remoteVersion) {
+    try {
+      localStorage.removeItem(UPDATE_DISMISS_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function renderUpdateChrome() {
+  const available = Boolean(pendingUpdate && compareProductVersions(pendingUpdate.version, APP_VERSION) > 0);
+  const dismissed = available && loadDismissedUpdateVersion() === pendingUpdate.version;
+  const showBanner = available && !dismissed;
+
+  if (dom.updateBanner) {
+    dom.updateBanner.hidden = !showBanner;
+    if (showBanner && dom.updateBannerCopy) {
+      dom.updateBannerCopy.textContent =
+        `v${pendingUpdate.version} está en GitHub (vos tenés v${APP_VERSION}). Instalá el Setup encima; tus datos se conservan.`;
+    }
+  }
+  if (dom.installUpdateBtn) {
+    dom.installUpdateBtn.hidden = !available;
+    dom.installUpdateBtn.disabled = !available;
+  }
+}
+
+async function openPendingUpdateDownload() {
+  if (!pendingUpdate?.downloadUrl) {
+    showToast("No hay una descarga de update lista");
+    return;
+  }
+  await openBrowserUrl(pendingUpdate.downloadUrl);
+  showToast("Se abrió la descarga del Setup · instalá y reiniciá Ilara");
+}
+
 async function checkForAppUpdates({ interactive = true } = {}) {
-  setUpdateStatus(`Tu versión: ${APP_CHANNEL} · v${APP_VERSION}. Consultando GitHub…`);
+  if (interactive || !pendingUpdate) {
+    setUpdateStatus(`Tu versión: ${APP_CHANNEL} · v${APP_VERSION}. Consultando GitHub…`);
+  }
   if (dom.checkUpdatesBtn) dom.checkUpdatesBtn.disabled = true;
   try {
     const response = await fetch(GITHUB_LATEST_API, {
@@ -2846,9 +3307,11 @@ async function checkForAppUpdates({ interactive = true } = {}) {
       },
     });
     if (response.status === 404) {
+      pendingUpdate = null;
       setUpdateStatus(
         `Tu versión: v${APP_VERSION}. Todavía no hay Releases publicadas en GitHub (publicá v${APP_VERSION} en el repo).`,
       );
+      renderUpdateChrome();
       if (interactive) {
         showToast("No hay Releases en GitHub todavía", {
           label: "Abrir repo",
@@ -2871,11 +3334,19 @@ async function checkForAppUpdates({ interactive = true } = {}) {
     );
     const downloadUrl = setupAsset?.browser_download_url || release.html_url || GITHUB_RELEASES_URL;
     const cmp = compareProductVersions(remoteVersion, APP_VERSION);
+    clearDismissedUpdateIfStale(remoteVersion);
 
     if (cmp > 0) {
+      pendingUpdate = {
+        version: remoteVersion,
+        downloadUrl,
+        setupName: setupAsset?.name || "Setup",
+        tag,
+      };
       setUpdateStatus(
-        `Hay una versión nueva: v${remoteVersion} (vos tenés v${APP_VERSION}). Descargá el Setup e instalá encima.`,
+        `Hay una versión nueva: v${remoteVersion} (vos tenés v${APP_VERSION}). Tocá «Descargar Setup nuevo» o el aviso de arriba.`,
       );
+      renderUpdateChrome();
       if (interactive) {
         const go = await confirmAction({
           title: "Actualización disponible",
@@ -2884,18 +3355,23 @@ async function checkForAppUpdates({ interactive = true } = {}) {
             release.name ? `Release: ${release.name}` : `Tag: ${tag}`,
             setupAsset ? `Archivo: ${setupAsset.name}` : "Abrirá la página de la Release",
             "Tus datos en este PC no se borran al instalar encima.",
+            "Después de instalar, cerrá y volvé a abrir Ilara.",
           ].filter(Boolean),
-          confirmLabel: "Descargar / abrir",
+          confirmLabel: "Descargar Setup",
         });
-        if (go) await openBrowserUrl(downloadUrl);
+        if (go) await openPendingUpdateDownload();
       }
     } else if (cmp === 0) {
+      pendingUpdate = null;
       setUpdateStatus(`Estás al día: v${APP_VERSION} es la última Release en GitHub.`);
+      renderUpdateChrome();
       if (interactive) showToast("Ya tenés la última versión");
     } else {
+      pendingUpdate = null;
       setUpdateStatus(
         `Tu app es v${APP_VERSION}; en GitHub la última publicada es v${remoteVersion} (más vieja o pre-release).`,
       );
+      renderUpdateChrome();
       if (interactive) showToast("Tu versión es más nueva que la Release pública");
     }
   } catch (error) {
@@ -2916,7 +3392,15 @@ async function checkForAppUpdates({ interactive = true } = {}) {
 
 function renderSettings() {
   renderProfileChrome();
-  setUpdateStatus(`Versión instalada: ${APP_CHANNEL} · v${APP_VERSION}`);
+  if (pendingUpdate && compareProductVersions(pendingUpdate.version, APP_VERSION) > 0) {
+    setUpdateStatus(
+      `Hay una versión nueva: v${pendingUpdate.version} (vos tenés v${APP_VERSION}). Tocá «Descargar Setup nuevo».`,
+    );
+  } else {
+    setUpdateStatus(`Versión instalada: ${APP_CHANNEL} · v${APP_VERSION}`);
+  }
+  renderUpdateChrome();
+  renderBackupHistory();
   dom.peopleList.replaceChildren();
   state.people.forEach((person) => {
     const chip = element("span", "person-chip");
@@ -3129,16 +3613,28 @@ function renderCardsListView() {
   heroValue.append(element("strong", "", formatMoneyAmount(monthLoad.totalArs, "ARS")));
   hero.append(heroValue);
   const chips = element("div", "cards-hero-chips");
+  const totalForPct = Math.max(1, monthLoad.totalArs);
   [
-    ["Cuotas", monthLoad.installmentArs],
-    ["Fijos", monthLoad.fixedArs],
-    ["Compras", monthLoad.purchaseArs],
-  ].forEach(([label, cents]) => {
+    ["Cuotas del mes", monthLoad.installmentArs, "Planes en cuotas que caen este mes"],
+    ["Fijos mensuales", monthLoad.fixedArs, "Cargos fijos que se repiten"],
+    ["Compras del mes", monthLoad.purchaseArs, "Gastos de un solo pago en este resumen"],
+  ].forEach(([label, cents, hint]) => {
     const chip = element("div", "cards-hero-chip");
-    chip.append(element("span", "", label), element("strong", "", formatMoneyAmount(cents, "ARS")));
+    const pct = monthLoad.totalArs > 0 ? Math.round((cents / totalForPct) * 100) : 0;
+    chip.title = hint;
+    chip.append(
+      element("span", "", label),
+      element("strong", "", formatMoneyAmount(cents, "ARS")),
+      element("small", "", monthLoad.totalArs > 0 ? `${pct}% del total` : "—"),
+    );
     chips.append(chip);
   });
   hero.append(chips);
+  hero.append(element(
+    "p",
+    "cards-charge-meta",
+    "Desglose solo de plásticos (sin cuentas corrientes). Cuotas = lo que cae este mes · Fijos = abonos · Compras = un pago del resumen.",
+  ));
 
   if (monthLoad.byCard.length) {
     const rank = element("div", "cards-rank");
@@ -3363,8 +3859,11 @@ function renderCardDetailView(card) {
 
   const kpis = element("div", "cards-detail-kpis");
   [
-    ["Este mes", formatMoneyAmount(load.totalArs, "ARS"), "Cuotas + fijos + compras"],
-    ["En cuotas (resto)", formatMoneyAmount(remainingInstallments, "ARS"), "Saldo de planes activos"],
+    ["Este mes", formatMoneyAmount(load.totalArs, "ARS"), "Total del resumen"],
+    ["Cuotas", formatMoneyAmount(load.installmentArs, "ARS"), "Caen este mes"],
+    ["Fijos", formatMoneyAmount(load.fixedArs, "ARS"), "Abonos del mes"],
+    ["Compras", formatMoneyAmount(load.purchaseArs, "ARS"), "Un pago del mes"],
+    ["Resto en cuotas", formatMoneyAmount(remainingInstallments, "ARS"), "Saldo de planes activos"],
     ["Uso del límite", card.limitCents > 0
       ? `${Math.min(999, Math.round((load.totalArs / card.limitCents) * 100))}%`
       : "—", card.limitCents > 0 ? "Sobre el límite cargado" : "Definí un límite al editar"],
@@ -3419,12 +3918,41 @@ function renderCardDetailView(card) {
   if (!charges.length) {
     chargesPanel.append(emptyState("Sin cargos", "Sumá una compra del mes, un plan en cuotas o un fijo."));
   } else {
-    const list = element("div", "cards-charge-list");
-    charges
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, "es"))
-      .forEach((charge) => list.append(renderChargeRow(charge)));
-    chargesPanel.append(list);
+    const groups = [
+      {
+        key: "purchase",
+        title: "Compras del mes (un pago)",
+        copy: "Suman solo al resumen del mes indicado.",
+        items: charges.filter((c) => c.chargeType === "purchase"),
+      },
+      {
+        key: "installment",
+        title: "Planes en cuotas",
+        copy: "Cada mes cae una cuota hasta saldar el plan.",
+        items: charges.filter((c) => c.chargeType === "installment"),
+      },
+      {
+        key: "fixed",
+        title: "Fijos mensuales",
+        copy: "Se repiten todos los meses mientras estén activos.",
+        items: charges.filter((c) => c.chargeType === "fixed"),
+      },
+    ];
+    groups.forEach((group) => {
+      if (!group.items.length) return;
+      const block = element("div", "cards-charge-group");
+      block.append(
+        element("h3", "cards-charge-group-title", `${group.title} (${group.items.length})`),
+        element("p", "cards-charge-meta", group.copy),
+      );
+      const list = element("div", "cards-charge-list");
+      group.items
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "es"))
+        .forEach((charge) => list.append(renderChargeRow(charge)));
+      block.append(list);
+      chargesPanel.append(block);
+    });
   }
   dom.cardsRoot.append(chargesPanel);
 
@@ -3509,11 +4037,28 @@ function openCardDialog(editCardId = "") {
   }
   const title = document.querySelector("#cardDialogTitle");
   if (title) title.textContent = existing ? "Editar tarjeta / ciclo" : "Nueva tarjeta";
+  // Al tipear un nombre tipo “CC…”, marcar cuenta corriente (solo si el usuario no lo desmarcó a mano en esta sesión del form).
+  const nameInput = dom.cardForm.elements.name;
+  const excludeInput = dom.cardForm.elements.excludeFromCardTotals;
+  if (nameInput && excludeInput && !nameInput.dataset.ccAutoWired) {
+    nameInput.dataset.ccAutoWired = "1";
+    nameInput.addEventListener("input", () => {
+      if (excludeInput.dataset.userTouched === "1") return;
+      if (nameLooksLikeCuentaCorriente(nameInput.value)) {
+        excludeInput.checked = true;
+      }
+    });
+    excludeInput.addEventListener("change", () => {
+      excludeInput.dataset.userTouched = "1";
+    });
+  }
+  if (excludeInput) excludeInput.dataset.userTouched = existing ? "1" : "";
   dom.cardDialog.showModal();
   window.setTimeout(() => dom.cardForm.elements.name?.focus(), 40);
 }
 
 function openPurchaseDialog(preselectedCardId = "") {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de cargar una compra")) return;
   if (!dom.purchaseDialog || !dom.purchaseForm) return;
   if (!state.creditCards.length) {
     showToast("Primero agregá una tarjeta en la sección Tarjetas");
@@ -3611,6 +4156,7 @@ function updateChargeAmountHint() {
 }
 
 function openChargeDialog(cardId, chargeType = "installment") {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de agregar un cargo")) return;
   if (!dom.chargeDialog || !dom.chargeForm) return;
   dom.chargeForm.reset();
   dom.chargeForm.elements.cardId.value = cardId;
@@ -3658,6 +4204,7 @@ async function saveCreditCard(event) {
 }
 
 async function generateCardStatement(cardId) {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de generar un resumen")) return;
   const card = state.creditCards.find((item) => item.id === cardId);
   if (!card) return;
   const load = getCardMonthLoad(cardId, state.activeMonth);
@@ -3772,6 +4319,7 @@ async function saveCardCharge(event) {
   const monthForLimit = charge.chargeType === "purchase"
     ? (charge.monthKey || state.activeMonth)
     : state.activeMonth;
+  if (!requireOpenMonth(monthForLimit, "Reabrí el mes del cargo antes de agregar")) return;
   const over = wouldExceedCardLimit(charge.cardId, chargeAmountArsForLimit(charge), monthForLimit);
   if (over) {
     showToast(
@@ -3810,6 +4358,7 @@ async function saveCardPurchase(event) {
     monthKey = statementMonthKeyForPurchase(card);
   }
   if (!isValidMonthKey(monthKey)) monthKey = state.activeMonth;
+  if (!requireOpenMonth(monthKey, "Reabrí el mes del resumen antes de cargar la compra")) return;
   const charge = normalizeCardCharge({
     id: createId(),
     cardId,
@@ -3885,6 +4434,11 @@ async function removeCreditCard(cardId) {
 }
 
 async function removeCardCharge(chargeId) {
+  const charge = state.cardCharges.find((item) => item.id === chargeId);
+  const guardMonth = charge?.chargeType === "purchase"
+    ? (charge.monthKey || state.activeMonth)
+    : state.activeMonth;
+  if (!requireOpenMonth(guardMonth, "Reabrí el mes antes de eliminar un cargo")) return;
   const previousState = cloneState(state);
   state.cardCharges = state.cardCharges.filter((item) => item.id !== chargeId);
   if (!await saveState()) {
@@ -3911,10 +4465,7 @@ async function removeCardCharge(chargeId) {
 
 /** Copia movimientos “una sola vez” del mes anterior al mes activo (como nuevos, ya cobrados/pagados). */
 async function copyFromPreviousMonth() {
-  if (state.closedMonths[state.activeMonth]) {
-    showToast("Reabrí el mes antes de copiar");
-    return;
-  }
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de copiar")) return;
   const prevMonth = addMonths(state.activeMonth, -1);
   const candidates = state.transactions.filter((tx) =>
     tx.schedule?.type === "one-time" && tx.schedule.startMonth === prevMonth
@@ -4047,6 +4598,7 @@ function renderMovementTemplates() {
 }
 
 async function markCardCuotaPaid(chargeId) {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de marcar cuotas")) return;
   const charge = state.cardCharges.find((item) => item.id === chargeId);
   if (!charge || charge.chargeType !== "installment") return;
   if (charge.paidInstallments >= charge.installments) return;
@@ -4062,6 +4614,7 @@ async function markCardCuotaPaid(chargeId) {
 }
 
 async function unmarkCardCuotaPaid(chargeId) {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de desmarcar cuotas")) return;
   const charge = state.cardCharges.find((item) => item.id === chargeId);
   if (!charge || charge.chargeType !== "installment" || charge.paidInstallments <= 0) return;
   const previousState = cloneState(state);
@@ -4288,7 +4841,14 @@ function updatePlannedFormFields() {
 
 function openPlannedDialog(id = "") {
   if (!dom.plannedDialog || !dom.plannedForm) return;
+  // Alta o edición de un plan del mes activo: no permitir si el mes está cerrado.
+  // (Editar un plan de otro mes abierto sí se puede al cambiar la fecha.)
+  if (!id && !requireOpenMonth(state.activeMonth, "Reabrí el mes antes de agregar un previsto")) return;
   const item = id ? state.plannedItems.find((entry) => entry.id === id) : null;
+  if (item && isMonthClosed(item.monthKey) && item.recurrence === "once") {
+    showToast("Reabrí el mes del previsto antes de editarlo");
+    return;
+  }
   dom.plannedForm.reset();
   fillSelectOptions(dom.plannedForm.elements.category, state.categories, {
     preserve: false,
@@ -4344,6 +4904,11 @@ async function savePlannedItem(event) {
   }
   // El mes del plan sale de la fecha (un solo control).
   const monthKeyFromDate = dueDateRaw.slice(0, 7);
+  if (!requireOpenMonth(monthKeyFromDate, "Reabrí el mes de la fecha antes de guardar el previsto")) return;
+  if (existing?.monthKey && existing.monthKey !== monthKeyFromDate
+    && !requireOpenMonth(existing.monthKey, "Reabrí el mes original del previsto antes de moverlo")) {
+    return;
+  }
   const item = normalizePlannedItem({
     id: existingId || createId(),
     kind: formData.get("kind"),
@@ -4432,10 +4997,7 @@ async function deletePlannedItem() {
 
 /** Abre un alta nueva con los datos del movimiento que se está editando. */
 function duplicateMovementFromDialog() {
-  if (state.closedMonths[state.activeMonth]) {
-    showToast("Reabrí el mes antes de duplicar");
-    return;
-  }
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de duplicar")) return;
   const formData = new FormData(dom.movementForm);
   const draft = {
     kind: formData.get("kind") || "expense",
@@ -4487,6 +5049,7 @@ function duplicateMovementFromDialog() {
 function openPlannedConfirm(id) {
   const item = (state.plannedItems || []).find((entry) => entry.id === id);
   if (!item || !dom.plannedConfirmDialog || !dom.plannedConfirmForm) return;
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de confirmar un previsto")) return;
   if (plannedStatusForMonth(item, state.activeMonth) !== "open") {
     showToast("Este previsto ya se resolvió para el mes");
     return;
@@ -4508,6 +5071,7 @@ function openPlannedConfirm(id) {
 
 async function confirmPlannedItem(event) {
   event.preventDefault();
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de confirmar un previsto")) return;
   const formData = new FormData(dom.plannedConfirmForm);
   const id = sanitizeText(formData.get("id"));
   const amountCents = toCents(formData.get("amount"));
@@ -4581,6 +5145,7 @@ async function confirmPlannedItem(event) {
 }
 
 async function dismissPlannedItem() {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de resolver un previsto")) return;
   const id = sanitizeText(dom.plannedConfirmForm?.elements?.id?.value);
   const item = (state.plannedItems || []).find((entry) => entry.id === id);
   if (!item) return;
@@ -4658,10 +5223,7 @@ function switchView(view) {
 }
 
 async function toggleOccurrenceStatus(item) {
-  if (state.closedMonths[item.monthKey]) {
-    showToast("Reabrí el mes antes de modificar un movimiento");
-    return;
-  }
+  if (!requireOpenMonth(item.monthKey, "Reabrí el mes antes de modificar un movimiento")) return;
   const previousState = cloneState(state);
   const markingPaid = item.status !== "paid";
   // Un clic: el monto del movimiento es el final. Sin segundo formulario de “importe real”.
@@ -4771,10 +5333,7 @@ function buildEditSource(transaction, record, monthKey) {
 }
 
 function openMovementDialog(transactionId = "", monthKey = state.activeMonth) {
-  if (state.closedMonths[monthKey]) {
-    showToast("Reabrí el mes antes de modificar movimientos");
-    return;
-  }
+  if (!requireOpenMonth(monthKey, "Reabrí el mes antes de modificar movimientos")) return;
   const transaction = state.transactions.find((item) => item.id === transactionId);
   const occurrenceKey = transactionId ? `${transactionId}:${monthKey}` : "";
   const record = occurrenceKey ? state.occurrences[occurrenceKey] : null;
@@ -4872,6 +5431,74 @@ function saveFormPrefs(partial) {
   }
 }
 
+function loadViewFilters() {
+  try {
+    const raw = localStorage.getItem(VIEW_FILTERS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveViewFilters(partial) {
+  try {
+    const current = loadViewFilters();
+    const next = { ...current, ...partial };
+    // Merge nested tab objects when provided.
+    if (partial.movements && typeof partial.movements === "object") {
+      next.movements = { ...(current.movements || {}), ...partial.movements };
+    }
+    if (partial.planned && typeof partial.planned === "object") {
+      next.planned = { ...(current.planned || {}), ...partial.planned };
+    }
+    localStorage.setItem(VIEW_FILTERS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyStoredViewFilters() {
+  const filters = loadViewFilters();
+  const movements = filters.movements || {};
+  if (dom.movementTypeFilter && movements.type) {
+    const allowed = ["all", "income", "expense"];
+    if (allowed.includes(movements.type)) dom.movementTypeFilter.value = movements.type;
+  }
+  if (dom.movementStatusFilter && movements.status) {
+    const allowed = ["all", "pending", "paid"];
+    if (allowed.includes(movements.status)) dom.movementStatusFilter.value = movements.status;
+  }
+  const planned = filters.planned || {};
+  if (dom.plannedTypeFilter && planned.type) {
+    const allowed = ["all", "income", "expense"];
+    if (allowed.includes(planned.type)) dom.plannedTypeFilter.value = planned.type;
+  }
+  if (dom.plannedStatusFilter && planned.status) {
+    const allowed = ["open", "done", "all"];
+    if (allowed.includes(planned.status)) dom.plannedStatusFilter.value = planned.status;
+  }
+}
+
+function persistMovementFilters() {
+  saveViewFilters({
+    movements: {
+      type: dom.movementTypeFilter?.value || "all",
+      status: dom.movementStatusFilter?.value || "all",
+    },
+  });
+}
+
+function persistPlannedFilters() {
+  saveViewFilters({
+    planned: {
+      type: dom.plannedTypeFilter?.value || "all",
+      status: dom.plannedStatusFilter?.value || "open",
+    },
+  });
+}
+
 /** Diálogos de formulario: no se cierran con clic afuera ni Escape (solo × / Cancelar / Guardar). */
 function lockDialogDismiss(dialog) {
   if (!dialog || dialog.dataset.dismissLocked === "1") return;
@@ -4921,6 +5548,13 @@ async function saveMovement(event) {
   event.preventDefault();
   const formData = new FormData(dom.movementForm);
   if (!validateScheduleRange({ report: true })) return;
+  // Guardia de mes cerrado: el mes del movimiento y el activo no deben estar cerrados.
+  const formStartMonth = sanitizeText(formData.get("startMonth")) || state.activeMonth;
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de guardar movimientos")) return;
+  if (formStartMonth !== state.activeMonth
+    && !requireOpenMonth(formStartMonth, "Reabrí el mes de inicio antes de guardar")) {
+    return;
+  }
   const existingId = sanitizeText(formData.get("id"));
   const existingSeries = existingId
     ? state.transactions.find((item) => item.id === existingId)
@@ -5060,6 +5694,7 @@ async function saveMovement(event) {
 }
 
 async function deleteMovement() {
+  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de eliminar movimientos")) return;
   const id = dom.movementForm.elements.id.value;
   if (!id) return;
   const index = state.transactions.findIndex((item) => item.id === id);
@@ -5248,20 +5883,30 @@ function csvCell(value) {
   return escapeCsvCell(value);
 }
 
-function exportCsv() {
-  const startCandidates = [
-    state.activeMonth,
-    ...state.transactions.map((item) => item.schedule.startMonth),
-    ...Object.values(state.occurrences).map((item) => item.monthKey),
-  ].filter(isValidMonthKey).sort();
-  let startMonth = startCandidates[0] || state.activeMonth;
-  if (monthDiff(startMonth, state.activeMonth) > 120) startMonth = addMonths(state.activeMonth, -120);
-  const endMonth = addMonths(state.activeMonth, state.settings.projectionMonths - 1);
+/**
+ * Exporta CSV de movimientos.
+ * @param {{ monthKey?: string }} [options] Si `monthKey` está definido, solo ese mes.
+ *   Sin opciones: rango histórico → proyección (desde Ajustes).
+ */
+function exportCsv(options = {}) {
+  const onlyMonth = isValidMonthKey(options.monthKey) ? options.monthKey : "";
   const rowMap = new Map();
-  const count = Math.max(1, monthDiff(startMonth, endMonth) + 1);
-  for (let index = 0; index < count; index += 1) {
-    const monthKey = addMonths(startMonth, index);
-    getMonthTotals(monthKey).occurrences.forEach((item) => rowMap.set(item.statusKey, item));
+  if (onlyMonth) {
+    getMonthTotals(onlyMonth).occurrences.forEach((item) => rowMap.set(item.statusKey, item));
+  } else {
+    const startCandidates = [
+      state.activeMonth,
+      ...state.transactions.map((item) => item.schedule.startMonth),
+      ...Object.values(state.occurrences).map((item) => item.monthKey),
+    ].filter(isValidMonthKey).sort();
+    let startMonth = startCandidates[0] || state.activeMonth;
+    if (monthDiff(startMonth, state.activeMonth) > 120) startMonth = addMonths(state.activeMonth, -120);
+    const endMonth = addMonths(state.activeMonth, state.settings.projectionMonths - 1);
+    const count = Math.max(1, monthDiff(startMonth, endMonth) + 1);
+    for (let index = 0; index < count; index += 1) {
+      const monthKey = addMonths(startMonth, index);
+      getMonthTotals(monthKey).occurrences.forEach((item) => rowMap.set(item.statusKey, item));
+    }
   }
   const header = [
     "Mes", "Tipo", "Concepto", "Categoría", "Persona", "Monto",
@@ -5283,19 +5928,34 @@ function exportCsv() {
       item.installmentIndex || "",
       item.note,
     ]);
+  if (!rows.length) {
+    showToast(onlyMonth
+      ? `No hay movimientos en ${formatMonthLabel(onlyMonth)}`
+      : "No hay movimientos para exportar");
+    return;
+  }
   const content = "\ufeff" + [header, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
   const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `ilara-movimientos-${state.activeMonth}.csv`;
+  const fileTag = onlyMonth || state.activeMonth;
+  link.download = onlyMonth
+    ? `ilara-mes-${onlyMonth}.csv`
+    : `ilara-movimientos-${fileTag}.csv`;
   document.body.append(link);
   link.click();
   window.setTimeout(() => {
     URL.revokeObjectURL(url);
     link.remove();
   }, 0);
-  showToast("CSV exportado");
+  showToast(onlyMonth
+    ? `CSV de ${formatMonthLabel(onlyMonth)} exportado (${rows.length})`
+    : `CSV exportado (${rows.length} filas)`);
+}
+
+function exportCsvThisMonth() {
+  exportCsv({ monthKey: state.activeMonth });
 }
 
 function exportData() {
@@ -5414,11 +6074,13 @@ function openMonthPicker() {
 
 dom.prevMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, -1);
+  categoryBreakdownExpanded = false;
   render();
   void saveState();
 });
 dom.nextMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, 1);
+  categoryBreakdownExpanded = false;
   render();
   void saveState();
 });
@@ -5427,13 +6089,30 @@ dom.activeMonthInput.addEventListener("change", (event) => {
   if (!isValidMonthKey(event.target.value)) return;
   if (event.target.value === state.activeMonth) return;
   state.activeMonth = event.target.value;
+  categoryBreakdownExpanded = false;
   render();
   void saveState();
 });
 
-[dom.movementSearch, dom.movementTypeFilter, dom.movementStatusFilter].forEach((control) =>
-  control.addEventListener("input", renderMovements),
+dom.movementSearch?.addEventListener("input", renderMovements);
+[dom.movementTypeFilter, dom.movementStatusFilter].forEach((control) =>
+  control?.addEventListener("change", () => {
+    persistMovementFilters();
+    renderMovements();
+  }),
 );
+dom.exportMonthCsvBtn?.addEventListener("click", () => exportCsvThisMonth());
+dom.projectionIncludeCards?.addEventListener("change", () => {
+  projectionUi.includeCards = Boolean(dom.projectionIncludeCards.checked);
+  renderProjection();
+});
+dom.projectionIncomeCut?.addEventListener("change", () => {
+  projectionUi.incomeCutPercent = Math.min(
+    90,
+    Math.max(0, Number(dom.projectionIncomeCut.value) || 0),
+  );
+  renderProjection();
+});
 dom.projectionMonthsSelect.addEventListener("change", (event) => {
   state.settings.projectionMonths = Number(event.target.value);
   renderProjection();
@@ -5572,10 +6251,16 @@ dom.preferencesForm.addEventListener("submit", async (event) => {
 });
 
 dom.exportBtn.addEventListener("click", exportData);
-dom.exportCsvBtn.addEventListener("click", exportCsv);
+dom.exportCsvBtn.addEventListener("click", () => exportCsv());
 dom.importBtn.addEventListener("click", () => dom.importFileInput.click());
 dom.importFileInput.addEventListener("change", () => importData(dom.importFileInput.files[0]));
 dom.checkUpdatesBtn?.addEventListener("click", () => void checkForAppUpdates({ interactive: true }));
+dom.installUpdateBtn?.addEventListener("click", () => void openPendingUpdateDownload());
+dom.updateBannerInstallBtn?.addEventListener("click", () => void openPendingUpdateDownload());
+dom.updateBannerLaterBtn?.addEventListener("click", () => {
+  if (pendingUpdate?.version) dismissPendingUpdate(pendingUpdate.version);
+  else if (dom.updateBanner) dom.updateBanner.hidden = true;
+});
 dom.openReleasesBtn?.addEventListener("click", () => void openBrowserUrl(GITHUB_RELEASES_URL));
 wireDriveUi();
 
@@ -5592,8 +6277,14 @@ dom.duplicateMovementBtn?.addEventListener("click", () => duplicateMovementFromD
 dom.copyPrevMonthBtn?.addEventListener("click", () => void copyFromPreviousMonth());
 
 dom.addPlannedBtn?.addEventListener("click", () => openPlannedDialog());
-dom.plannedTypeFilter?.addEventListener("change", () => renderPlanned());
-dom.plannedStatusFilter?.addEventListener("change", () => renderPlanned());
+dom.plannedTypeFilter?.addEventListener("change", () => {
+  persistPlannedFilters();
+  renderPlanned();
+});
+dom.plannedStatusFilter?.addEventListener("change", () => {
+  persistPlannedFilters();
+  renderPlanned();
+});
 dom.plannedForm?.addEventListener("submit", (event) => void savePlannedItem(event));
 dom.plannedForm?.elements?.recurrence?.addEventListener("change", updatePlannedFormFields);
 dom.deletePlannedBtn?.addEventListener("click", () => void deletePlannedItem());
@@ -5800,6 +6491,7 @@ async function wireDesktopShell() {
 async function initializeApp() {
   await refreshDataProfile();
   state = await loadState();
+  applyStoredViewFilters();
   const initialView = window.location.hash.slice(1);
   if (["dashboard", "movements", "planned", "cards", "projection", "settings"].includes(initialView)) {
     state.activeView = initialView;
@@ -5810,6 +6502,8 @@ async function initializeApp() {
   if (initializationWarning) showToast(initializationWarning);
   // Cotización estimativa al abrir (no bloquea la UI).
   void refreshUsdRate();
+  // Updates: consulta silenciosa al abrir (banner si hay versión nueva).
+  void checkForAppUpdates({ interactive: false });
   // Google Drive: estado + pull automático si hay copia más nueva.
   await refreshDriveStatus();
   if (driveStatus?.connected && driveStatus?.autoSync) {
