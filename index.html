@@ -69,7 +69,7 @@
         <div id="updateBanner" class="update-banner" hidden role="status">
           <strong>Actualización disponible</strong>
           <span id="updateBannerCopy">Hay una versión nueva en GitHub.</span>
-          <button id="updateBannerInstallBtn" class="primary-btn profile-banner-btn" type="button">Descargar Setup</button>
+          <button id="updateBannerInstallBtn" class="primary-btn profile-banner-btn" type="button">Descargar e instalar</button>
           <button id="updateBannerLaterBtn" class="secondary-btn profile-banner-btn" type="button">Después</button>
         </div>
         <header class="topbar">
@@ -427,7 +427,7 @@
               <div class="panel-heading">
                 <p class="eyebrow">Organización</p>
                 <h2>Categorías</h2>
-                <p>Administrá las categorías disponibles para ingresos y gastos.</p>
+                <p>Administrá las categorías disponibles. La lista se muestra compacta; podés expandirla con «Ver todas».</p>
               </div>
               <form id="categoryForm" class="inline-form">
                 <label class="grow-field">
@@ -533,15 +533,17 @@
               <div class="panel-heading">
                 <p class="eyebrow">Actualizaciones</p>
                 <h2>Versión de Ilara</h2>
-                <p>Compara con la última Release pública en GitHub. Si hay una nueva, te lleva al instalador (Setup).</p>
+                <p>Consulta GitHub Releases. Podés bajar el Setup acá mismo e instalar (modo semi-auto).</p>
               </div>
               <p id="updateStatusText" class="drive-status">Versión instalada: se muestra al cargar.</p>
               <div class="data-actions">
                 <button id="checkUpdatesBtn" class="primary-btn" type="button">Buscar actualizaciones</button>
-                <button id="installUpdateBtn" class="primary-btn" type="button" hidden>Descargar Setup nuevo</button>
+                <button id="downloadUpdateBtn" class="secondary-btn" type="button" hidden>Descargar Setup</button>
+                <button id="installUpdateBtn" class="primary-btn" type="button" hidden>Instalar y reiniciar</button>
+                <button id="openUpdateBrowserBtn" class="secondary-btn" type="button" hidden>Abrir en navegador</button>
                 <button id="openReleasesBtn" class="secondary-btn" type="button">Ver Releases en GitHub</button>
               </div>
-              <p class="privacy-note">Al abrir se consulta GitHub en segundo plano. Si hay versión nueva, aparece un aviso. Instalar = bajar el Setup e instalar encima (tus datos no se borran). Updater 100% silencioso queda para más adelante (firma de instaladores).</p>
+              <p class="privacy-note">Al abrir se consulta GitHub. Si hay versión nueva: descarga a una carpeta temporal, verifica SHA-256 si está en la Release, y lanza el Setup en modo silencioso (/S). Tus datos no se borran. Fallback: abrir el Setup en el navegador.</p>
             </article>
 
             <article class="panel data-panel">

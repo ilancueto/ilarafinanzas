@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## 3.9.9.12 — Estable — 2026-08-08
+
+### Actualizaciones (nivel B)
+- Descarga del **Setup dentro de la app** (temp), con **SHA-256** si hay `SHA256SUMS` / digest en la Release.
+- **Instalar y reiniciar**: lanza el NSIS con `/S` y cierra Ilara.
+- Fallback: abrir Setup en el navegador.
+- Banner y Ajustes con botones Descargar / Instalar.
+
+### UX
+- Ajustes → Categorías: lista compacta (12) + **Ver todas / Ver menos**.
+
 ## 3.9.9.11 — Estable — 2026-08-07
 
 ### Corregido

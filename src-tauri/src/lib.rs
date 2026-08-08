@@ -1,3 +1,4 @@
+mod app_update;
 mod drive_sync;
 mod repository;
 
@@ -145,6 +146,9 @@ pub fn run() {
             drive_sync::drive_pull,
             drive_sync::drive_confirm_pulled,
             drive_sync::open_external_url,
+            app_update::download_app_setup,
+            app_update::launch_app_setup_and_quit,
+            app_update::hash_local_file_sha256,
         ])
         .run(tauri::generate_context!())
         .expect("error al ejecutar Ilara Finanzas");

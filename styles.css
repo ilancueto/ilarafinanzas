@@ -1296,6 +1296,18 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   margin-top: 4px;
   font-size: 0.82rem;
 }
+.settings-categories-toggle-wrap {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 6px;
+}
+.settings-categories-hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
 
 .person-breakdown-panel { margin-top: 0; }
 .person-breakdown {

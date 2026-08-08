@@ -56,6 +56,28 @@ export async function openExternalUrl(url: string): Promise<void> {
   return invoke<void>("open_external_url", { url });
 }
 
+/** Descarga el Setup de update a temp (solo GitHub). Devuelve ruta local. */
+export async function downloadAppSetup(
+  url: string,
+  fileName: string,
+  expectedSha256?: string | null,
+): Promise<string> {
+  return invoke<string>("download_app_setup", {
+    url,
+    fileName,
+    expectedSha256: expectedSha256 || null,
+  });
+}
+
+/** Lanza el Setup NSIS y cierra la app. silent → flag /S. */
+export async function launchAppSetupAndQuit(path: string, silent = true): Promise<void> {
+  return invoke<void>("launch_app_setup_and_quit", { path, silent });
+}
+
+export async function hashLocalFileSha256(path: string): Promise<string> {
+  return invoke<string>("hash_local_file_sha256", { path });
+}
+
 export async function loadStoredState(): Promise<unknown | null> {
   await writeQueue;
   return invoke<unknown | null>("load_app_state");

@@ -36,11 +36,13 @@ import {
   migrateLegacySnapshot,
   resetSandboxProfile,
   openExternalUrl,
+  downloadAppSetup,
+  launchAppSetupAndQuit,
   saveStoredState,
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.11";
+const APP_VERSION = "3.9.9.12";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -276,6 +278,8 @@ const dom = {
   updateBannerInstallBtn: document.querySelector("#updateBannerInstallBtn"),
   updateBannerLaterBtn: document.querySelector("#updateBannerLaterBtn"),
   installUpdateBtn: document.querySelector("#installUpdateBtn"),
+  downloadUpdateBtn: document.querySelector("#downloadUpdateBtn"),
+  openUpdateBrowserBtn: document.querySelector("#openUpdateBrowserBtn"),
   projectionIncludeCards: document.querySelector("#projectionIncludeCards"),
   projectionIncomeCut: document.querySelector("#projectionIncomeCut"),
   emergencyPanel: document.querySelector("#emergencyPanel"),
@@ -370,6 +374,9 @@ let dataProfile = null;
 let profileBusy = false;
 /** Dashboard: desglose de categorías expandido (top 5 vs todas). */
 let categoryBreakdownExpanded = false;
+/** Ajustes: lista de chips de categorías colapsada. */
+let settingsCategoriesExpanded = false;
+const SETTINGS_CATEGORIES_PREVIEW = 12;
 
 function emergencyStorageKey() {
   const profileId = dataProfile?.id || "hogar";
@@ -2510,6 +2517,62 @@ function renderBudgetProgress(totals) {
   });
 }
 
+/** Chips de categorías en Ajustes: preview + Ver todas (evita lista eterna). */
+function renderSettingsCategories() {
+  if (!dom.categoriesList) return;
+  dom.categoriesList.replaceChildren();
+  const all = [...(state.categories || [])].sort((a, b) => a.localeCompare(b, "es"));
+  if (!all.length) {
+    settingsCategoriesExpanded = false;
+    dom.categoriesList.append(
+      element("p", "backup-history-empty", "Sin categorías todavía. Agregá una arriba."),
+    );
+    return;
+  }
+  const hasMore = all.length > SETTINGS_CATEGORIES_PREVIEW;
+  const visible = settingsCategoriesExpanded || !hasMore
+    ? all
+    : all.slice(0, SETTINGS_CATEGORIES_PREVIEW);
+  visible.forEach((category) => {
+    const chip = element("span", "person-chip");
+    chip.append(element("span", "", category));
+    const remove = element("button", "", "×");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Eliminar categoría ${category}`);
+    remove.addEventListener("click", () => removeCategory(category));
+    chip.append(remove);
+    dom.categoriesList.append(chip);
+  });
+  if (hasMore) {
+    const toggle = element(
+      "button",
+      "text-btn category-breakdown-toggle settings-categories-toggle",
+      settingsCategoriesExpanded
+        ? "Ver menos"
+        : `Ver todas (${all.length})`,
+    );
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", settingsCategoriesExpanded ? "true" : "false");
+    toggle.addEventListener("click", () => {
+      settingsCategoriesExpanded = !settingsCategoriesExpanded;
+      renderSettingsCategories();
+    });
+    // Fuera del flex wrap de chips: fila completa debajo.
+    const wrap = element("div", "settings-categories-toggle-wrap");
+    wrap.append(toggle);
+    if (!settingsCategoriesExpanded) {
+      wrap.append(
+        element(
+          "small",
+          "settings-categories-hint",
+          ` · mostrando ${SETTINGS_CATEGORIES_PREVIEW} de ${all.length}`,
+        ),
+      );
+    }
+    dom.categoriesList.append(wrap);
+  }
+}
+
 function renderCategoryBreakdown(expenses) {
   dom.categoryBreakdown.replaceChildren();
   if (!expenses.length) {
@@ -3236,8 +3299,19 @@ function setUpdateStatus(text) {
   if (dom.updateStatusText) dom.updateStatusText.textContent = text;
 }
 
-/** @type {{ version: string, downloadUrl: string, setupName: string, tag: string } | null} */
+/**
+ * @type {{
+ *   version: string,
+ *   downloadUrl: string,
+ *   setupName: string,
+ *   tag: string,
+ *   sha256: string,
+ *   localPath: string,
+ *   downloading: boolean,
+ * } | null}
+ */
 let pendingUpdate = null;
+let updateBusy = false;
 
 function loadDismissedUpdateVersion() {
   try {
@@ -3267,31 +3341,199 @@ function clearDismissedUpdateIfStale(remoteVersion) {
   }
 }
 
+/** Extrae SHA-256 del asset de GitHub o del archivo SHA256SUMS del release. */
+async function resolveSetupSha256(setupAsset, assets) {
+  const digest = String(setupAsset?.digest || "");
+  if (/^sha256:/i.test(digest)) {
+    return digest.replace(/^sha256:/i, "").trim().toLowerCase();
+  }
+  const sumsAsset = (assets || []).find((asset) =>
+    /sha256sums\.txt$/i.test(asset.name || "") || /SHA256SUMS/i.test(asset.name || ""),
+  );
+  if (!sumsAsset?.browser_download_url || !setupAsset?.name) return "";
+  try {
+    const res = await fetch(sumsAsset.browser_download_url, {
+      headers: { Accept: "text/plain" },
+    });
+    if (!res.ok) return "";
+    const text = await res.text();
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      // "hash  filename" o "hash *filename"
+      const m = line.trim().match(/^([a-fA-F0-9]{64})\s+\*?(.+)$/);
+      if (!m) continue;
+      const file = m[2].trim().replace(/^\.\//, "");
+      if (file === setupAsset.name || file.endsWith(setupAsset.name)) {
+        return m[1].toLowerCase();
+      }
+    }
+  } catch (error) {
+    console.warn("No se pudo leer SHA256SUMS.", error);
+  }
+  return "";
+}
+
+function isUpdateAvailable() {
+  return Boolean(pendingUpdate && compareProductVersions(pendingUpdate.version, APP_VERSION) > 0);
+}
+
 function renderUpdateChrome() {
-  const available = Boolean(pendingUpdate && compareProductVersions(pendingUpdate.version, APP_VERSION) > 0);
+  const available = isUpdateAvailable();
   const dismissed = available && loadDismissedUpdateVersion() === pendingUpdate.version;
   const showBanner = available && !dismissed;
+  const ready = Boolean(pendingUpdate?.localPath);
+  const busy = updateBusy || pendingUpdate?.downloading;
 
   if (dom.updateBanner) {
     dom.updateBanner.hidden = !showBanner;
     if (showBanner && dom.updateBannerCopy) {
-      dom.updateBannerCopy.textContent =
-        `v${pendingUpdate.version} está en GitHub (vos tenés v${APP_VERSION}). Instalá el Setup encima; tus datos se conservan.`;
+      dom.updateBannerCopy.textContent = ready
+        ? `v${pendingUpdate.version} descargada. Tocá «Instalar y reiniciar» (datos se conservan).`
+        : `v${pendingUpdate.version} disponible (vos tenés v${APP_VERSION}). Se puede bajar e instalar desde acá.`;
+    }
+    if (dom.updateBannerInstallBtn) {
+      dom.updateBannerInstallBtn.textContent = ready
+        ? "Instalar y reiniciar"
+        : busy
+          ? "Descargando…"
+          : "Descargar e instalar";
+      dom.updateBannerInstallBtn.disabled = Boolean(busy);
     }
   }
+
+  if (dom.downloadUpdateBtn) {
+    dom.downloadUpdateBtn.hidden = !available || ready;
+    dom.downloadUpdateBtn.disabled = Boolean(busy || !available);
+    dom.downloadUpdateBtn.textContent = busy ? "Descargando…" : "Descargar Setup";
+  }
   if (dom.installUpdateBtn) {
-    dom.installUpdateBtn.hidden = !available;
-    dom.installUpdateBtn.disabled = !available;
+    dom.installUpdateBtn.hidden = !available || !ready;
+    dom.installUpdateBtn.disabled = Boolean(busy || !ready);
+  }
+  if (dom.openUpdateBrowserBtn) {
+    dom.openUpdateBrowserBtn.hidden = !available;
+    dom.openUpdateBrowserBtn.disabled = Boolean(busy);
   }
 }
 
-async function openPendingUpdateDownload() {
+async function openPendingUpdateInBrowser() {
   if (!pendingUpdate?.downloadUrl) {
     showToast("No hay una descarga de update lista");
     return;
   }
   await openBrowserUrl(pendingUpdate.downloadUrl);
-  showToast("Se abrió la descarga del Setup · instalá y reiniciá Ilara");
+  showToast("Se abrió la descarga del Setup en el navegador");
+}
+
+/** Nivel B: baja el Setup a temp (con SHA-256 si hay). */
+async function downloadPendingUpdate({ interactive = true } = {}) {
+  if (!pendingUpdate?.downloadUrl) {
+    showToast("No hay una actualización pendiente");
+    return false;
+  }
+  if (!pendingUpdate.downloadUrl.includes("github")) {
+    // Sin asset directo: fallback navegador.
+    await openPendingUpdateInBrowser();
+    return false;
+  }
+  if (pendingUpdate.localPath) {
+    if (interactive) showToast("El Setup ya está descargado");
+    renderUpdateChrome();
+    return true;
+  }
+  if (updateBusy) return false;
+  updateBusy = true;
+  pendingUpdate.downloading = true;
+  renderUpdateChrome();
+  setUpdateStatus(`Descargando Setup v${pendingUpdate.version}…`);
+  try {
+    const path = await downloadAppSetup(
+      pendingUpdate.downloadUrl,
+      pendingUpdate.setupName || `Ilara-Finanzas-${pendingUpdate.version}-Setup.exe`,
+      pendingUpdate.sha256 || null,
+    );
+    pendingUpdate.localPath = path;
+    pendingUpdate.downloading = false;
+    setUpdateStatus(
+      `Setup v${pendingUpdate.version} listo. Tocá «Instalar y reiniciar» (instalación silenciosa; tus datos se conservan).`,
+    );
+    renderUpdateChrome();
+    if (interactive) showToast("Setup descargado · listo para instalar");
+    return true;
+  } catch (error) {
+    console.warn("Descarga nativa del Setup falló.", error);
+    pendingUpdate.downloading = false;
+    setUpdateStatus(
+      `No se pudo descargar el Setup (${storageErrorMessage(error)}). Probá abrir en el navegador.`,
+    );
+    renderUpdateChrome();
+    if (interactive) {
+      showToast("No se pudo descargar acá", {
+        label: "Abrir en navegador",
+        handler: () => void openPendingUpdateInBrowser(),
+      });
+    }
+    return false;
+  } finally {
+    updateBusy = false;
+    if (pendingUpdate) pendingUpdate.downloading = false;
+    renderUpdateChrome();
+  }
+}
+
+/** Nivel B: lanza NSIS (/S) y cierra Ilara. */
+async function installPendingUpdateAndRestart() {
+  if (!isUpdateAvailable()) {
+    showToast("No hay actualización pendiente");
+    return;
+  }
+  if (!pendingUpdate.localPath) {
+    const ok = await downloadPendingUpdate({ interactive: true });
+    if (!ok || !pendingUpdate?.localPath) return;
+  }
+  const confirmed = await confirmAction({
+    title: "Instalar actualización",
+    copy:
+      `Se va a instalar v${pendingUpdate.version} y Ilara se va a cerrar. `
+      + "El instalador corre en modo silencioso cuando se puede. Tus datos locales no se borran.",
+    details: [
+      `Archivo: ${pendingUpdate.setupName || "Setup"}`,
+      pendingUpdate.sha256 ? "SHA-256 verificado al descargar" : "Sin hash publicado (se instaló igual)",
+      "Si el instalador pide permiso de Windows, aceptalo.",
+      "Después volvé a abrir Ilara desde el menú Inicio.",
+    ].filter(Boolean),
+    confirmLabel: "Instalar y reiniciar",
+  });
+  if (!confirmed) return;
+  updateBusy = true;
+  renderUpdateChrome();
+  setUpdateStatus("Iniciando instalador… Ilara se cierra.");
+  try {
+    await launchAppSetupAndQuit(pendingUpdate.localPath, true);
+    // Si no cierra (p.ej. web dev), avisar.
+    showToast("Instalador lanzado · cerrá Ilara si sigue abierta");
+  } catch (error) {
+    console.warn("No se pudo lanzar el Setup.", error);
+    updateBusy = false;
+    renderUpdateChrome();
+    showToast(String(error?.message || error || "No se pudo iniciar el instalador"), {
+      label: "Abrir en navegador",
+      handler: () => void openPendingUpdateInBrowser(),
+    });
+  }
+}
+
+/** Un clic: descargar (si falta) + instalar. */
+async function handleUpdatePrimaryAction() {
+  if (!isUpdateAvailable()) return;
+  if (pendingUpdate.localPath) {
+    await installPendingUpdateAndRestart();
+    return;
+  }
+  const ok = await downloadPendingUpdate({ interactive: true });
+  if (ok && pendingUpdate?.localPath) {
+    await installPendingUpdateAndRestart();
+  }
 }
 
 async function checkForAppUpdates({ interactive = true } = {}) {
@@ -3333,33 +3575,41 @@ async function checkForAppUpdates({ interactive = true } = {}) {
       /setup\.exe$/i.test(asset.name || "") || /Windows-x64-Setup\.exe$/i.test(asset.name || ""),
     );
     const downloadUrl = setupAsset?.browser_download_url || release.html_url || GITHUB_RELEASES_URL;
+    const sha256 = setupAsset ? await resolveSetupSha256(setupAsset, assets) : "";
     const cmp = compareProductVersions(remoteVersion, APP_VERSION);
     clearDismissedUpdateIfStale(remoteVersion);
 
     if (cmp > 0) {
+      const prevPath = pendingUpdate?.version === remoteVersion ? pendingUpdate.localPath : "";
       pendingUpdate = {
         version: remoteVersion,
         downloadUrl,
-        setupName: setupAsset?.name || "Setup",
+        setupName: setupAsset?.name || `Ilara-Finanzas-${remoteVersion}-Windows-x64-Setup.exe`,
         tag,
+        sha256,
+        localPath: prevPath || "",
+        downloading: false,
       };
       setUpdateStatus(
-        `Hay una versión nueva: v${remoteVersion} (vos tenés v${APP_VERSION}). Tocá «Descargar Setup nuevo» o el aviso de arriba.`,
+        pendingUpdate.localPath
+          ? `Setup v${remoteVersion} listo. Tocá «Instalar y reiniciar».`
+          : `Hay una versión nueva: v${remoteVersion} (vos tenés v${APP_VERSION}). Podés descargar e instalar desde la app.`,
       );
       renderUpdateChrome();
       if (interactive) {
         const go = await confirmAction({
           title: "Actualización disponible",
-          copy: `En GitHub está v${remoteVersion}. Tu app es v${APP_VERSION}. ¿Abrir la descarga del instalador?`,
+          copy: `En GitHub está v${remoteVersion}. Tu app es v${APP_VERSION}. ¿Descargar e instalar ahora?`,
           details: [
             release.name ? `Release: ${release.name}` : `Tag: ${tag}`,
-            setupAsset ? `Archivo: ${setupAsset.name}` : "Abrirá la página de la Release",
-            "Tus datos en este PC no se borran al instalar encima.",
-            "Después de instalar, cerrá y volvé a abrir Ilara.",
+            setupAsset ? `Archivo: ${setupAsset.name}` : "Sin asset Setup (se abrirá la página)",
+            sha256 ? "Se verificará SHA-256 al descargar" : "Sin hash en la Release",
+            "Tus datos en este PC no se borran.",
+            "La app se cierra al lanzar el instalador.",
           ].filter(Boolean),
-          confirmLabel: "Descargar Setup",
+          confirmLabel: "Descargar e instalar",
         });
-        if (go) await openPendingUpdateDownload();
+        if (go) await handleUpdatePrimaryAction();
       }
     } else if (cmp === 0) {
       pendingUpdate = null;
@@ -3418,17 +3668,7 @@ function renderSettings() {
   dom.preferencesForm.elements.openingBalanceMonth.value = state.settings.openingBalanceMonth;
   dom.preferencesForm.elements.projectionMonths.value = String(state.settings.projectionMonths);
   dom.categoryForm.reset();
-  dom.categoriesList.replaceChildren();
-  state.categories.forEach((category) => {
-    const chip = element("span", "person-chip");
-    chip.append(element("span", "", category));
-    const remove = element("button", "", "×");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Eliminar categoría ${category}`);
-    remove.addEventListener("click", () => removeCategory(category));
-    chip.append(remove);
-    dom.categoriesList.append(chip);
-  });
+  renderSettingsCategories();
   dom.budgetForm.elements.monthKey.value = state.activeMonth;
   dom.budgetsList.replaceChildren();
   const budgets = [...state.budgets].sort((a, b) =>
@@ -6255,8 +6495,10 @@ dom.exportCsvBtn.addEventListener("click", () => exportCsv());
 dom.importBtn.addEventListener("click", () => dom.importFileInput.click());
 dom.importFileInput.addEventListener("change", () => importData(dom.importFileInput.files[0]));
 dom.checkUpdatesBtn?.addEventListener("click", () => void checkForAppUpdates({ interactive: true }));
-dom.installUpdateBtn?.addEventListener("click", () => void openPendingUpdateDownload());
-dom.updateBannerInstallBtn?.addEventListener("click", () => void openPendingUpdateDownload());
+dom.downloadUpdateBtn?.addEventListener("click", () => void downloadPendingUpdate({ interactive: true }));
+dom.installUpdateBtn?.addEventListener("click", () => void installPendingUpdateAndRestart());
+dom.openUpdateBrowserBtn?.addEventListener("click", () => void openPendingUpdateInBrowser());
+dom.updateBannerInstallBtn?.addEventListener("click", () => void handleUpdatePrimaryAction());
 dom.updateBannerLaterBtn?.addEventListener("click", () => {
   if (pendingUpdate?.version) dismissPendingUpdate(pendingUpdate.version);
   else if (dom.updateBanner) dom.updateBanner.hidden = true;

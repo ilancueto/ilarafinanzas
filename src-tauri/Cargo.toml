@@ -1,6 +1,6 @@
 [package]
 name = "ilara-finanzas"
-version = "3.9.9+11"
+version = "3.9.9+12"
 description = "Finanzas personales y del hogar"
 authors = ["Ilara"]
 edition = "2021"
