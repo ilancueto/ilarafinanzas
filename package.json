@@ -17,7 +17,8 @@
     "check": "tsc --noEmit && node --check app.js && node --check finance-core.js && node --check state-core.js",
     "verify": "npm run version:sync && npm test && npm run check && npm run build && npm run native:fmt && npm run native:test && npm run native:check && npm run native:clippy",
     "release:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1",
-    "release:build": "npm run verify && npm run native:build && npm run release:package"
+    "release:build": "npm run verify && npm run native:build && npm run release:package",
+    "release:publish": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-github-release.ps1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.0",
