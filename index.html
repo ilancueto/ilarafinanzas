@@ -18,42 +18,80 @@
 
         <nav class="side-nav">
           <button class="nav-item is-active" type="button" data-view="dashboard">
-            <span class="nav-icon" aria-hidden="true">⌂</span><span>Inicio</span>
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5Z"/></svg>
+            </span><span>Inicio</span>
           </button>
           <button class="nav-item" type="button" data-view="movements">
-            <span class="nav-icon" aria-hidden="true">↕</span><span>Movimientos</span>
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7h11M8 12h11M8 17h11"/><path d="M5 7h.01M5 12h.01M5 17h.01"/></svg>
+            </span><span>Movimientos</span>
+          </button>
+          <button class="nav-item" type="button" data-view="planned">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </span><span>Previstos</span>
+          </button>
+          <button class="nav-item" type="button" data-view="cards">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+            </span><span>Tarjetas</span>
           </button>
           <button class="nav-item" type="button" data-view="projection">
-            <span class="nav-icon" aria-hidden="true">⌁</span><span>Proyección</span>
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-3"/><path d="M12 15V8"/><path d="M16 15v-5"/></svg>
+            </span><span>Proyección</span>
           </button>
           <button class="nav-item" type="button" data-view="settings">
-            <span class="nav-icon" aria-hidden="true">⚙</span><span>Ajustes</span>
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+            </span><span>Ajustes</span>
           </button>
         </nav>
 
         <div class="sidebar-foot">
-          <p>Todo queda guardado en este dispositivo.</p>
-          <button id="sidebarAddBtn" class="primary-btn full-width" type="button">+ Nuevo movimiento</button>
+          <p>Datos solo en este equipo · offline</p>
+          <button id="sidebarAddBtn" class="primary-btn full-width" type="button">Nuevo movimiento</button>
         </div>
       </aside>
 
       <main class="main-content">
+        <div id="profileSandboxBanner" class="profile-sandbox-banner" hidden role="status">
+          <strong>Perfil de prueba</strong>
+          <span>Los cambios no tocan los datos reales del hogar. Volvé a “Hogar” cuando termines de probar.</span>
+          <button id="profileSwitchToHogarBtn" class="secondary-btn profile-banner-btn" type="button">Ir a Hogar</button>
+        </div>
+        <div id="emergencyBanner" class="emergency-banner" hidden role="alert">
+          <strong>Copia de emergencia</strong>
+          <span id="emergencyBannerCopy">Hay cambios fuera de SQLite. Revisá Ajustes → Copia de emergencia.</span>
+          <button id="emergencyBannerSettingsBtn" class="secondary-btn profile-banner-btn" type="button">Ir a Ajustes</button>
+        </div>
         <header class="topbar">
           <div class="mobile-brand">
             <span class="brand-logo-shell brand-logo-mobile" aria-hidden="true"><img class="brand-logo" src="logo_ilara.png" alt="" /></span>
           </div>
           <div class="month-switcher" aria-label="Cambiar mes activo">
             <button id="prevMonthBtn" class="icon-btn" type="button" aria-label="Mes anterior">‹</button>
-            <label class="month-control">
-              <span id="activeMonthLabel">Mes activo</span>
-              <span id="activeMonthDisplay" aria-hidden="true"></span>
-              <input id="activeMonthInput" type="month" aria-labelledby="activeMonthLabel" />
-            </label>
+            <div class="month-control">
+              <button id="monthPickerBtn" class="month-picker-btn" type="button" aria-label="Elegir mes y año">
+                <span id="activeMonthDisplay"></span>
+                <span class="month-picker-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="5" width="18" height="16" rx="2" />
+                    <path d="M3 10h18" />
+                    <path d="M8 3v4" />
+                    <path d="M16 3v4" />
+                  </svg>
+                </span>
+              </button>
+              <input id="activeMonthInput" type="month" tabindex="-1" aria-hidden="true" />
+            </div>
             <button id="nextMonthBtn" class="icon-btn" type="button" aria-label="Mes siguiente">›</button>
           </div>
-          <button id="topAddBtn" class="primary-btn desktop-add" type="button">+ Agregar</button>
+          <button id="topAddBtn" class="primary-btn desktop-add" type="button">Nuevo</button>
         </header>
 
+        <div class="content-scroll" id="contentScroll">
         <section id="dashboardView" class="view is-active" data-view-panel="dashboard">
           <div class="page-heading dashboard-heading">
             <div>
@@ -63,19 +101,31 @@
             </div>
             <div class="month-state-actions">
               <span id="monthHealth" class="health-pill"></span>
+              <button id="dashboardCardPurchaseBtn" class="secondary-btn" type="button">+ Gasto en tarjeta</button>
               <button id="monthCloseBtn" class="secondary-btn" type="button">Cerrar mes</button>
             </div>
           </div>
 
           <div id="summaryGrid" class="summary-grid" aria-live="polite"></div>
 
+          <article id="dueSoonPanel" class="panel due-soon-panel" hidden>
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Agenda</p>
+                <h2>Vencimientos de este mes</h2>
+              </div>
+              <button class="text-btn" type="button" data-go-view="movements">Ver movimientos</button>
+            </div>
+            <div id="dueSoonList" class="due-soon-list"></div>
+          </article>
+
           <article class="panel actual-panel" aria-labelledby="actualSummaryTitle">
             <div class="panel-heading inline-heading actual-heading">
               <div>
                 <p class="eyebrow">Estado real</p>
-                <h2 id="actualSummaryTitle">Lo que ya pasó este mes</h2>
+                <h2 id="actualSummaryTitle">Cobrado y pagado este mes</h2>
               </div>
-              <span class="actual-caption">Separado de lo previsto</span>
+              <span class="actual-caption">Solo cambia el estado (tilde), no el monto</span>
             </div>
             <div id="actualSummary" class="actual-summary" aria-live="polite"></div>
           </article>
@@ -97,7 +147,7 @@
               <div class="panel-heading inline-heading">
                 <div>
                   <p class="eyebrow">Este mes</p>
-                  <h2>Próximos movimientos</h2>
+                  <h2>Últimos movimientos</h2>
                 </div>
                 <button class="text-btn" type="button" data-go-view="movements">Ver todos</button>
               </div>
@@ -135,13 +185,16 @@
               <h1>Movimientos</h1>
               <p class="heading-copy">Ingresos, gastos y cuotas reunidos en un solo lugar.</p>
             </div>
-            <button class="primary-btn" type="button" data-add-movement>+ Nuevo movimiento</button>
+            <div class="page-heading-actions">
+              <button id="copyPrevMonthBtn" class="secondary-btn" type="button">Copiar del mes anterior</button>
+              <button class="primary-btn" type="button" data-add-movement>+ Nuevo movimiento</button>
+            </div>
           </div>
 
           <div class="filter-bar">
             <label class="search-field">
               <span class="sr-only">Buscar movimientos</span>
-              <input id="movementSearch" type="search" placeholder="Buscar por nombre o categoría" />
+              <input id="movementSearch" type="search" placeholder="Buscar (Ctrl+K) por nombre o categoría" />
             </label>
             <label>
               <span class="sr-only">Filtrar por tipo</span>
@@ -167,12 +220,87 @@
           </article>
         </section>
 
+        <section id="plannedView" class="view" data-view-panel="planned" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">Plan del mes</p>
+              <h1>Previstos</h1>
+              <p class="heading-copy">Cosas que esperás cobrar o pagar. Cuando se cumplan, las confirmás y pasan a Movimientos (podés ajustar el monto).</p>
+            </div>
+            <button id="addPlannedBtn" class="primary-btn" type="button">+ Previsto</button>
+          </div>
+
+          <div class="filter-bar">
+            <label>
+              <span class="sr-only">Filtrar por tipo</span>
+              <select id="plannedTypeFilter">
+                <option value="all">Todos</option>
+                <option value="income">Ingresos</option>
+                <option value="expense">Gastos</option>
+              </select>
+            </label>
+            <label>
+              <span class="sr-only">Estado</span>
+              <select id="plannedStatusFilter">
+                <option value="open">Pendientes del mes</option>
+                <option value="done">Cumplidos / descartados</option>
+                <option value="all">Todos del mes</option>
+              </select>
+            </label>
+          </div>
+
+          <article class="panel movements-panel">
+            <div id="plannedTotals" class="list-totals"></div>
+            <div id="plannedList" class="movement-list" aria-live="polite"></div>
+          </article>
+        </section>
+
+        <section id="cardsView" class="view" data-view-panel="cards" hidden>
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">Plásticos</p>
+              <h1 id="cardsPageTitle">Tarjetas de crédito</h1>
+              <p id="cardsPageCopy" class="heading-copy">Carga del mes, límites y resumen por tarjeta. No se suma a los KPIs del hogar hasta que generes el resumen.</p>
+            </div>
+            <div class="cards-heading-actions">
+              <button id="cardsBackBtn" class="secondary-btn" type="button" hidden>← Todas</button>
+              <button id="dashboardCardPurchaseBtnTop" class="secondary-btn" type="button">+ Gasto en tarjeta</button>
+              <button id="addCardBtn" class="primary-btn" type="button">+ Tarjeta</button>
+            </div>
+          </div>
+
+          <article class="panel cards-fx-panel">
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Dólar</p>
+                <h2>Tipo de cambio USD → ARS</h2>
+                <p>Estimativo de red (podés forzar el de tu banco).</p>
+              </div>
+            </div>
+            <div class="cards-fx-row">
+              <label>
+                <span>Cotización (ARS por 1 USD)</span>
+                <input id="fxRateInput" type="number" min="0.01" step="0.01" inputmode="decimal" />
+              </label>
+              <label class="cards-fx-check">
+                <input id="fxUseManual" type="checkbox" />
+                <span>Usar valor manual</span>
+              </label>
+              <button id="fxSaveBtn" class="secondary-btn" type="button">Guardar TC</button>
+              <button id="fxRefreshBtn" class="primary-btn" type="button">Actualizar de red</button>
+            </div>
+            <p id="fxStatus" class="cards-fx-status"></p>
+          </article>
+
+          <div id="cardsRoot" class="cards-root"></div>
+        </section>
+
         <section id="projectionView" class="view" data-view-panel="projection" hidden>
           <div class="page-heading projection-heading">
             <div>
               <p class="eyebrow">Mirar hacia adelante</p>
               <h1>Proyección</h1>
-              <p class="heading-copy">Las cuotas desaparecen al terminar y los saldos se acumulan mes a mes.</p>
+              <p class="heading-copy">Mes a mes y desglose de gastos. Tocá un mes o una categoría para explorar. No inventa sueldos futuros.</p>
             </div>
             <label class="select-inline">
               <span>Horizonte</span>
@@ -190,12 +318,24 @@
           <article class="panel projection-chart-panel">
             <div class="panel-heading inline-heading">
               <div>
-                <p class="eyebrow">Resultado mensual</p>
-                <h2>Ingresos frente a gastos</h2>
+                <p class="eyebrow">Mes a mes</p>
+                <h2>Ingresos y gastos</h2>
               </div>
-              <div class="chart-legend"><span class="income-dot"></span> Ingresos <span class="expense-dot"></span> Gastos</div>
+              <div class="chart-legend"><span class="income-dot"></span> Ingresos <span class="expense-dot"></span> Gastos · clic = desglose</div>
             </div>
             <div id="projectionChart" class="projection-chart"></div>
+          </article>
+
+          <article class="panel projection-breakdown-panel">
+            <div class="panel-heading inline-heading">
+              <div>
+                <p class="eyebrow">Desglose</p>
+                <h2 id="projectionBreakdownTitle">Gastos por categoría</h2>
+              </div>
+              <div id="projectionExpenseFilters" class="projection-filters" role="group" aria-label="Tipo de gasto"></div>
+            </div>
+            <div id="projectionBreakdown" class="projection-breakdown"></div>
+            <div id="projectionBreakdownDetail" class="projection-breakdown-detail" hidden></div>
           </article>
 
           <article class="panel projection-list-panel">
@@ -217,6 +357,21 @@
           </div>
 
           <div class="settings-grid">
+            <article class="panel data-panel profile-panel">
+              <div class="panel-heading">
+                <p class="eyebrow">Datos</p>
+                <h2>Perfil de trabajo</h2>
+                <p>Usá el <strong>perfil de prueba</strong> para experimentar (V4 alpha, formularios, etc.) sin tocar los gastos reales. Cada perfil tiene su propia base local.</p>
+              </div>
+              <div id="profileStatus" class="profile-status" aria-live="polite"></div>
+              <div class="data-actions profile-actions">
+                <button id="profileHogarBtn" class="primary-btn" type="button">Hogar (reales)</button>
+                <button id="profilePruebaBtn" class="secondary-btn" type="button">Perfil de prueba</button>
+                <button id="profileResetPruebaBtn" class="danger-btn" type="button">Vaciar prueba</button>
+              </div>
+              <p class="form-hint">Drive solo sube/baja el perfil <strong>Hogar</strong>. En prueba no se sincroniza a la nube.</p>
+            </article>
+
             <article class="panel">
               <div class="panel-heading">
                 <p class="eyebrow">Hogar</p>
@@ -257,7 +412,7 @@
               </div>
               <form id="budgetForm" class="settings-form">
                 <label><span>Mes</span><input name="monthKey" type="month" required /></label>
-                <label><span>Categoría</span><input name="category" type="text" list="categoryOptions" required /></label>
+                <label><span>Categoría</span><select name="category" required></select></label>
                 <label><span>Presupuesto</span><input name="amount" type="number" min="0.01" step="0.01" required /></label>
                 <button class="primary-btn" type="submit">Guardar presupuesto</button>
               </form>
@@ -294,6 +449,53 @@
 
             <article class="panel data-panel">
               <div class="panel-heading">
+                <p class="eyebrow">Nube</p>
+                <h2>Google Drive</h2>
+                <p>Conectá una vez y la app sube/baja sola la última copia entre tus PCs. Sin pendrive ni copiar archivos.</p>
+              </div>
+              <div id="driveSetupBlock" class="drive-setup">
+                <p class="form-hint">Una sola vez: creá un cliente OAuth “Escritorio” en Google Cloud, activá Drive API y pegá acá Client ID y Secret. Guía en README (sección Drive).</p>
+                <label>
+                  <span>Client ID</span>
+                  <input id="driveClientId" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx.apps.googleusercontent.com" />
+                </label>
+                <label>
+                  <span>Client Secret</span>
+                  <input id="driveClientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="GOCSPX-…" />
+                </label>
+                <div class="data-actions">
+                  <button id="driveSaveCredsBtn" class="secondary-btn" type="button">Guardar credenciales</button>
+                </div>
+              </div>
+              <div class="drive-status-row">
+                <p id="driveStatusText" class="drive-status">Drive no configurado.</p>
+                <label class="drive-auto-toggle">
+                  <input id="driveAutoSyncToggle" type="checkbox" checked />
+                  <span>Sync automática</span>
+                </label>
+              </div>
+              <div class="data-actions">
+                <button id="driveConnectBtn" class="primary-btn" type="button">Conectar Google</button>
+                <button id="driveSyncNowBtn" class="secondary-btn" type="button">Sincronizar ahora</button>
+                <button id="driveDisconnectBtn" class="secondary-btn" type="button">Desconectar</button>
+              </div>
+            </article>
+
+            <article id="emergencyPanel" class="panel data-panel emergency-panel" hidden>
+              <div class="panel-heading">
+                <p class="eyebrow">Recuperación</p>
+                <h2>Copia de emergencia</h2>
+                <p id="emergencyStatusCopy">Hay cambios guardados en el navegador porque SQLite falló. Podés aplicarlos a la base, exportarlos o descartarlos.</p>
+              </div>
+              <div class="data-actions">
+                <button id="emergencyApplyBtn" class="primary-btn" type="button">Aplicar a SQLite</button>
+                <button id="emergencyExportBtn" class="secondary-btn" type="button">Exportar copia</button>
+                <button id="emergencyDiscardBtn" class="danger-btn" type="button">Descartar</button>
+              </div>
+            </article>
+
+            <article class="panel data-panel">
+              <div class="panel-heading">
                 <p class="eyebrow">Respaldo</p>
                 <h2>Tus datos</h2>
                 <p>Exportá una copia para pasarla a otro dispositivo o recuperarla más adelante.</p>
@@ -304,10 +506,11 @@
                 <button id="importBtn" class="secondary-btn" type="button">Importar copia</button>
                 <input id="importFileInput" type="file" accept="application/json" hidden />
               </div>
-              <p class="privacy-note">La app funciona sin cuenta y no envía información a internet. <span id="appVersion"></span></p>
+              <p class="privacy-note">Sin Drive: todo queda solo en este equipo. Con Drive: la copia de sync va a <strong>tu</strong> Google Drive. Actualizaciones: instalador (Setup) en GitHub Releases; el portable es legacy. <span id="appVersion"></span></p>
             </article>
           </div>
         </section>
+        </div>
       </main>
     </div>
 
@@ -315,10 +518,116 @@
 
     <nav class="bottom-nav" aria-label="Navegación móvil">
       <button class="nav-item is-active" type="button" data-view="dashboard"><span aria-hidden="true">⌂</span><small>Inicio</small></button>
-      <button class="nav-item" type="button" data-view="movements"><span aria-hidden="true">↕</span><small>Movimientos</small></button>
-      <button class="nav-item" type="button" data-view="projection"><span aria-hidden="true">⌁</span><small>Proyección</small></button>
+      <button class="nav-item" type="button" data-view="movements"><span aria-hidden="true">↕</span><small>Movim.</small></button>
+      <button class="nav-item" type="button" data-view="planned"><span aria-hidden="true">✓</span><small>Prev.</small></button>
+      <button class="nav-item" type="button" data-view="cards"><span aria-hidden="true">▭</span><small>Tarjetas</small></button>
+      <button class="nav-item" type="button" data-view="projection"><span aria-hidden="true">⌁</span><small>Proy.</small></button>
       <button class="nav-item" type="button" data-view="settings"><span aria-hidden="true">⚙</span><small>Ajustes</small></button>
     </nav>
+
+    <dialog id="cardDialog" class="confirmation-dialog" aria-labelledby="cardDialogTitle">
+      <form id="cardForm" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Tarjeta</p>
+            <h2 id="cardDialogTitle">Nueva tarjeta</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-card-dialog aria-label="Cerrar">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <div class="form-grid">
+          <label class="span-2"><span>Nombre</span><input name="name" type="text" required placeholder="Ej. Visa Galicia" /></label>
+          <label><span>Persona</span><select name="person" required></select></label>
+          <label><span>Límite (ARS)</span><input name="limit" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Ej. 800000" /></label>
+          <label><span>Cierre del ciclo</span><input name="closingDate" type="date" /></label>
+          <label><span>Vencimiento del ciclo</span><input name="dueDate" type="date" /></label>
+          <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" /></label>
+          <label class="span-2 cards-cc-check">
+            <input name="excludeFromCardTotals" type="checkbox" />
+            <span>Cuenta corriente (no sumar a tarjetas)</span>
+          </label>
+        </div>
+        <p class="form-hint">Cierre y vencimiento son del ciclo/resumen actual (día + mes). Actualizalos en cada resumen; no son un día fijo eterno. Si es cuenta corriente, aparece en el apartado aparte y no suma al total de plásticos.</p>
+        <div class="dialog-actions">
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-card-dialog>Cancelar</button>
+          <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="purchaseDialog" class="confirmation-dialog" aria-labelledby="purchaseDialogTitle">
+      <form id="purchaseForm" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Tarjeta</p>
+            <h2 id="purchaseDialogTitle">Gasto en tarjeta</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-purchase-dialog aria-label="Cerrar">×</button>
+        </div>
+        <p class="confirmation-copy">Un solo pago del mes (no es un plan de cuotas). Suma a la proyección de tarjetas de ese mes, no a los KPIs del hogar.</p>
+        <div class="form-grid" style="margin-top: 14px;">
+          <label class="span-2"><span>Tarjeta</span><select name="cardId" required></select></label>
+          <label class="span-2"><span>Concepto</span><input name="name" type="text" required placeholder="Ej. Supermercado, cena, nafta" /></label>
+          <label><span>Moneda</span>
+            <select name="currency">
+              <option value="ARS" selected>ARS</option>
+              <option value="USD">USD</option>
+            </select>
+          </label>
+          <label><span>Monto</span><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required placeholder="Ej. 45000" /></label>
+          <label><span>Mes del resumen</span><input name="monthKey" type="month" required /></label>
+          <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" /></label>
+        </div>
+        <div class="dialog-actions">
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-purchase-dialog>Cancelar</button>
+          <button class="primary-btn" type="submit">Registrar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="chargeDialog" class="movement-dialog" aria-labelledby="chargeDialogTitle">
+      <form id="chargeForm" class="movement-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Cargo en tarjeta</p>
+            <h2 id="chargeDialogTitle">Plan en cuotas</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-charge-dialog aria-label="Cerrar">×</button>
+        </div>
+        <input name="cardId" type="hidden" />
+        <input name="chargeType" type="hidden" value="installment" />
+        <div class="form-grid">
+          <label class="span-2"><span>Concepto</span><input name="name" type="text" required placeholder="Ej. Heladera" /></label>
+          <label><span>Moneda</span>
+            <select name="currency">
+              <option value="ARS">ARS (pesos)</option>
+              <option value="USD">USD (dólares)</option>
+            </select>
+          </label>
+          <label id="chargeAmountModeField"><span>Cargar por</span>
+            <select name="amountMode">
+              <option value="total" selected>Total del plan</option>
+              <option value="cuota">Valor de cada cuota</option>
+            </select>
+          </label>
+          <label id="chargeInstallmentsField"><span>Cuotas</span><input name="installments" type="number" min="2" max="120" step="1" value="12" /></label>
+          <label id="chargeTotalField"><span>Total del plan</span><input name="totalAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Ej. 1200000" /></label>
+          <label id="chargeCuotaField" hidden><span>Valor de cada cuota</span><input name="cuotaAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Ej. 100000" /></label>
+          <label id="chargePaidField"><span>Ya pagadas</span><input name="paidInstallments" type="number" min="0" max="120" step="1" value="0" /></label>
+          <p id="chargeAmountHint" class="form-hint span-2"></p>
+          <label id="chargeMonthlyField" class="span-2" hidden><span>Monto mensual</span><input name="monthlyAmount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Ej. 29.99" /></label>
+          <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" /></label>
+        </div>
+        <p class="form-hint">Esto no se suma a Inicio, Movimientos ni Proyección. Solo vive en Tarjetas.</p>
+        <div class="dialog-actions">
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-charge-dialog>Cancelar</button>
+          <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="movementDialog" class="movement-dialog">
       <form id="movementForm" class="movement-form" method="dialog">
@@ -337,14 +646,14 @@
 
         <div class="form-grid">
           <label class="span-2"><span>Concepto</span><input name="name" type="text" placeholder="Ej. Alquiler, sueldo, heladera" required /></label>
-          <label><span>Categoría</span><input name="category" type="text" list="categoryOptions" placeholder="Ej. Hogar" required /></label>
-          <label><span>Persona</span><input name="person" type="text" list="peopleOptions" placeholder="Ej. Compartido" required /></label>
+          <label><span>Categoría</span><select name="category" required></select></label>
+          <label><span>Persona</span><select name="person" required></select></label>
           <label><span id="amountLabel">Monto</span><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /></label>
           <label><span>Mes de inicio</span><input name="startMonth" type="month" required /></label>
           <label><span>Modalidad</span><select name="scheduleType"><option value="one-time">Una sola vez</option><option value="monthly">Todos los meses</option><option value="installment">En cuotas</option></select></label>
           <label id="installmentsField" hidden><span>Cantidad de cuotas</span><input name="installments" type="number" min="2" max="120" step="1" value="2" /></label>
           <label id="endMonthField" hidden><span>Finaliza en (opcional)</span><input name="endMonth" type="month" /></label>
-          <label><span>Día estimado</span><input name="dueDay" type="number" min="1" max="31" inputmode="numeric" placeholder="Ej. 10" /></label>
+          <label><span>Fecha estimada</span><input name="dueDate" type="date" /></label>
           <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" placeholder="Un dato que quieran recordar" /></label>
           <label id="editScopeField" class="span-2" hidden>
             <span>Aplicar el cambio a</span>
@@ -359,9 +668,77 @@
         <p id="formHint" class="form-hint"></p>
         <div class="dialog-actions">
           <button id="deleteMovementBtn" class="danger-btn" type="button" hidden>Eliminar</button>
+          <button id="duplicateMovementBtn" class="secondary-btn" type="button" hidden>Duplicar</button>
           <span class="action-spacer"></span>
           <button id="cancelDialogBtn" class="secondary-btn" type="button">Cancelar</button>
           <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="plannedDialog" class="confirmation-dialog" aria-labelledby="plannedDialogTitle">
+      <form id="plannedForm" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Previsto</p>
+            <h2 id="plannedDialogTitle">Nuevo previsto</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-planned-dialog aria-label="Cerrar">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <fieldset class="kind-switch">
+          <legend class="sr-only">Tipo</legend>
+          <label><input type="radio" name="kind" value="expense" checked /><span>Gasto</span></label>
+          <label><input type="radio" name="kind" value="income" /><span>Ingreso</span></label>
+        </fieldset>
+        <div class="form-grid">
+          <label class="span-2"><span>Concepto</span><input name="name" type="text" required placeholder="Ej. Sueldo, alquiler" /></label>
+          <label><span>Categoría</span><select name="category" required></select></label>
+          <label><span>Persona</span><select name="person" required></select></label>
+          <label><span>Monto esperado</span><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required /></label>
+          <label><span>Fecha</span><input name="dueDate" type="date" required /></label>
+          <label><span>Recurrencia</span>
+            <select name="recurrence">
+              <option value="once">Solo ese mes</option>
+              <option value="monthly">Todos los meses (desde esa fecha)</option>
+            </select>
+          </label>
+          <label id="plannedEndMonthField" hidden><span>Hasta (opcional)</span><input name="endMonth" type="month" /></label>
+          <label class="span-2"><span>Nota</span><input name="note" type="text" maxlength="120" /></label>
+          <p class="form-hint span-2">El mes del plan se toma de la fecha. Si es mensual, se repite desde ese mes el mismo día (ajustado si el mes no lo tiene).</p>
+        </div>
+        <div class="dialog-actions">
+          <button id="deletePlannedBtn" class="danger-btn" type="button" hidden>Eliminar</button>
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-planned-dialog>Cancelar</button>
+          <button class="primary-btn" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="plannedConfirmDialog" class="confirmation-dialog" aria-labelledby="plannedConfirmTitle">
+      <form id="plannedConfirmForm" class="confirmation-form">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Confirmar previsto</p>
+            <h2 id="plannedConfirmTitle">¿Se cumplió?</h2>
+          </div>
+          <button class="icon-btn close-btn" type="button" data-close-planned-confirm aria-label="Cerrar">×</button>
+        </div>
+        <input name="id" type="hidden" />
+        <p id="plannedConfirmCopy" class="confirmation-copy">Revisá el monto. Si es correcto, confirmá; si no, cambialo y después confirmá.</p>
+        <div class="form-grid settlement-fields">
+          <label class="span-2"><span>Monto a incorporar en Movimientos</span>
+            <input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required />
+          </label>
+        </div>
+        <p class="form-hint">Se creará un movimiento real de este mes con ese monto y quedará marcado como cobrado/pagado.</p>
+        <div class="dialog-actions planned-confirm-actions">
+          <button id="plannedConfirmEditBtn" class="secondary-btn" type="button">Editar plan</button>
+          <button id="plannedConfirmDismissBtn" class="secondary-btn" type="button">No se cumplió</button>
+          <span class="action-spacer"></span>
+          <button class="secondary-btn" type="button" data-close-planned-confirm>Cancelar</button>
+          <button class="primary-btn" type="submit">Confirmar e incorporar</button>
         </div>
       </form>
     </dialog>
@@ -407,8 +784,6 @@
       </form>
     </dialog>
 
-    <datalist id="peopleOptions"></datalist>
-    <datalist id="categoryOptions"></datalist>
     <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">
       <span id="toastMessage"></span>
       <button id="toastAction" class="toast-action" type="button" hidden></button>

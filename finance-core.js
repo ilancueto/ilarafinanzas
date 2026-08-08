@@ -119,14 +119,14 @@ export function getMonthTotals(transactions, occurrenceRecords, monthKey) {
   const occurrences = getOccurrences(transactions, occurrenceRecords, monthKey);
   const incomes = occurrences.filter((item) => item.kind === "income");
   const expenses = occurrences.filter((item) => item.kind === "expense");
-  const totalIncomeCents = incomes.reduce((sum, item) => sum + item.amountThisMonthCents, 0);
-  const totalExpenseCents = expenses.reduce((sum, item) => sum + item.amountThisMonthCents, 0);
-  const realizedAmount = (item) => item.status === "paid" && Number.isSafeInteger(item.actualAmountCents)
-    ? item.actualAmountCents : item.amountThisMonthCents;
+  // Un solo monto por movimiento (el cargado). Cobrado/pagado es solo estado, no otro importe.
+  const amountOf = (item) => item.amountThisMonthCents;
+  const totalIncomeCents = incomes.reduce((sum, item) => sum + amountOf(item), 0);
+  const totalExpenseCents = expenses.reduce((sum, item) => sum + amountOf(item), 0);
   const paidExpenseCents = expenses.filter((item) => item.status === "paid")
-    .reduce((sum, item) => sum + realizedAmount(item), 0);
+    .reduce((sum, item) => sum + amountOf(item), 0);
   const receivedIncomeCents = incomes.filter((item) => item.status === "paid")
-    .reduce((sum, item) => sum + realizedAmount(item), 0);
+    .reduce((sum, item) => sum + amountOf(item), 0);
   const pendingExpenseCents = expenses.filter((item) => item.status === "pending")
     .reduce((sum, item) => sum + item.amountThisMonthCents, 0);
   const pendingIncomeCents = incomes.filter((item) => item.status === "pending")

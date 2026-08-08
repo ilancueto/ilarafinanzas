@@ -1,10 +1,38 @@
-dist/
+# Dependencies & build
 node_modules/
+dist/
 src-tauri/target/
-release/*.exe
 coverage/
-*.log
+
+# Local release binaries (upload via GitHub Releases, not git)
+release/*.exe
+release/*.msi
+release/*.dmg
+!release/.gitkeep
+
+# Env & secrets (Drive OAuth, etc. stay local)
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor / tooling
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local scratch
+tmp/
+capturas/
+*.pdf
+
+# Python cache if any
+__pycache__/
+*.pyc

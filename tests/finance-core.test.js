@@ -119,7 +119,7 @@ test("arrastra el saldo desde su mes de origen sin volver a aplicarlo", () => {
   assert.deepEqual(projection.map((month) => month.cumulativeCents), [35000, 45000]);
 });
 
-test("usa el importe real sin perder el importe previsto", () => {
+test("usa un solo monto aunque el registro tenga actual distinto (legado)", () => {
   const expense = transaction({ id: "expense", amountCents: 40000 });
   const records = {
     "expense:2026-08": {
@@ -142,10 +142,11 @@ test("usa el importe real sin perder el importe previsto", () => {
     },
   };
   const totals = getMonthTotals([expense], records, "2026-08");
+  // El monto del movimiento manda; cobrado/pagado no inventa otro importe.
   assert.equal(totals.totalExpenseCents, 40000);
-  assert.equal(totals.paidExpenseCents, 42550);
+  assert.equal(totals.paidExpenseCents, 40000);
   assert.equal(totals.pendingExpenseCents, 0);
-  assert.equal(totals.actualBalanceCents, -42550);
+  assert.equal(totals.actualBalanceCents, -40000);
 });
 
 test("conserva una ocurrencia materializada aunque la serie ya no exista", () => {
