@@ -77,11 +77,18 @@ if ($releaseExists) {
   exit 0
 }
 
-# Asegurar tag remoto
-$tagExists = git -C $projectRoot rev-parse "refs/tags/$tag" 2>$null
+# Asegurar tag remoto (git rev-parse escribe a stderr si no existe → no tumbar con Stop)
+$tagExists = $false
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+git -C $projectRoot rev-parse "refs/tags/$tag" 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { $tagExists = $true }
+$ErrorActionPreference = $prevEap
 if (-not $tagExists) {
   git -C $projectRoot tag -a $tag -m "Ilara Finanzas $Version"
+  if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el tag $tag" }
   git -C $projectRoot push origin $tag
+  if ($LASTEXITCODE -ne 0) { throw "No se pudo pushear el tag $tag" }
 }
 
 $ghArgs = @(
