@@ -42,7 +42,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.12";
+const APP_VERSION = "3.9.9.13";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -2757,9 +2757,9 @@ function renderMovements() {
 }
 
 const EXPENSE_CHART_COLORS = [
-  "#3D9CF0", "#F07178", "#3DDC97", "#F5C542", "#C084FC",
-  "#38BDF8", "#FB923C", "#34D399", "#A78BFA", "#F472B6",
-  "#2DD4BF", "#FBBF24",
+  "#D4A574", "#E08A7A", "#8FBF9A", "#C48972", "#A78BFA",
+  "#E0B86A", "#7EB8C9", "#D4A0C0", "#8FB4A8", "#F0B4A8",
+  "#B8A0D4", "#C9B48A",
 ];
 
 /** UI local de Proyección (no se persiste). */
@@ -3021,7 +3021,7 @@ function renderProjection() {
     } else {
       categories.forEach((row, index) => {
         const color = row.isCards
-          ? "#0f3d4c"
+          ? "#d4a574"
           : EXPENSE_CHART_COLORS[index % EXPENSE_CHART_COLORS.length];
         const pct = Math.round((row.cents / selectedExpenseTotal) * 100) || 0;
         const barRow = element("button", "expense-bar-row");

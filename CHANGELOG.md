@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## 3.9.9.13 — Estable — 2026-08-08
+
+### Visual — Soft Noir
+- Tema **oscuro cálido** alineado al logo Ilara (champagne / rose gold).
+- Fondo paper `#141210`, superficies elevadas, acento champagne en nav y botones primarios.
+- Ingresos en verde suave; gastos en coral; contrastes y dialogs ajustados al dark.
+- Paleta de gráficos y `theme-color` actualizados.
+
+### Mantenimiento
+- CSS modular: `styles/tokens.css`, `shell.css`, `components.css`, `views.css` (barrel en `styles.css`).
+
 ## 3.9.9.12 — Estable — 2026-08-08
 
 ### Actualizaciones (nivel B)

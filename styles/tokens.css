@@ -1,0 +1,105 @@
+/* Ilara Soft Noir — design tokens + base */
+:root {
+  --ink: #ece6df;
+  --muted: #9a9086;
+  --paper: #141210;
+  --surface: #1c1916;
+  --surface-solid: #1c1916;
+  --surface-2: #24201c;
+  --line: rgba(236, 230, 223, 0.11);
+  --green: #d4a574;
+  --green-dark: #e8c49a;
+  --green-soft: rgba(212, 165, 116, 0.14);
+  --mint: #c48972;
+  --coral: #e08a7a;
+  --coral-soft: rgba(224, 138, 122, 0.16);
+  --gold: #d4a574;
+  --gold-soft: rgba(212, 165, 116, 0.12);
+  --ok: #8fbf9a;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --shadow-small: 0 2px 8px rgba(0, 0, 0, 0.22);
+  --radius-xl: 14px;
+  --radius-lg: 12px;
+  --radius-md: 9px;
+  --font-ui: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-ui);
+  --font-display: var(--font-ui);
+  --control-h: 34px;
+  --row-h: 48px;
+  --sidebar-w: 232px;
+  --text: var(--ink);
+  --focus: rgba(212, 165, 116, 0.38);
+  --hover: rgba(212, 165, 116, 0.1);
+  --accent-rgb: 212, 165, 116;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+html {
+  scroll-behavior: auto;
+  color-scheme: dark;
+}
+
+body {
+  min-width: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  color-scheme: dark;
+}
+
+button, input, select, textarea, .movement-name, .heading-copy, .confirmation-copy {
+  user-select: text;
+}
+
+button, input, select { font: inherit; }
+button { color: inherit; }
+button, select, input[type="month"] { cursor: pointer; }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgba(212, 165, 116, 0.45);
+  outline-offset: 1px;
+}
+
+::selection { background: rgba(212, 165, 116, 0.18); }
+
+h1, h2, p { margin-top: 0; }
+h1, h2 {
+  font-family: var(--font-ui);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+h1 { margin-bottom: 6px; font-size: clamp(1.55rem, 2vw, 1.85rem); line-height: 1.15; }
+h2 { margin-bottom: 0; font-size: 1.05rem; line-height: 1.2; }
+[hidden] { display: none !important; }
+
+/* Quiet desktop scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(236, 230, 223, 0.28) transparent;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
