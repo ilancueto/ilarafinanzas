@@ -36,7 +36,13 @@ export function createHomeUi(api) {
     getMonthTotals,
     toggleOccurrenceStatus,
     installmentProgress,
+    removeCategory,
   } = api;
+
+  // UI-only flags (lived in app.js before extract; must stay local to this module)
+  let categoryBreakdownExpanded = false;
+  let settingsCategoriesExpanded = false;
+  const SETTINGS_CATEGORIES_PREVIEW = 12;
 
 function renderDashboard() {
   const totals = getMonthTotals(getState().activeMonth);
@@ -239,6 +245,7 @@ function renderDueSoon(totals) {
 }
 
 function renderBudgetProgress(totals) {
+  if (!getDom().monthComparison || !getDom().budgetProgress) return;
   const previous = getMonthTotals(addMonths(getState().activeMonth, -1));
   const expenseDiff = totals.totalExpenseCents - previous.totalExpenseCents;
   const incomeDiff = totals.totalIncomeCents - previous.totalIncomeCents;
@@ -259,7 +266,7 @@ function renderBudgetProgress(totals) {
     getDom().monthComparison.textContent = `${parts.join(" · ")} vs ${formatMonthLabel(addMonths(getState().activeMonth, -1), true)}`;
   }
   getDom().budgetProgress.replaceChildren();
-  const budgets = getState().budgets.filter((budget) => budget.monthKey === getState().activeMonth);
+  const budgets = (getState().budgets || []).filter((budget) => budget.monthKey === getState().activeMonth);
   if (!budgets.length) {
     getDom().budgetProgress.append(emptyState(
       "Sin presupuestos para este mes",
@@ -345,6 +352,7 @@ function renderSettingsCategories() {
 }
 
 function renderCategoryBreakdown(expenses) {
+  if (!getDom().categoryBreakdown) return;
   getDom().categoryBreakdown.replaceChildren();
   if (!expenses.length) {
     categoryBreakdownExpanded = false;
@@ -415,14 +423,18 @@ function renderMiniForecast() {
 }
 
 function scheduleLabel(item) {
-  if (item.schedule.type === "installment") {
-    const progress = installmentProgress(item);
+  const schedule = item?.schedule || {};
+  const type = schedule.type || "one-time";
+  if (type === "installment") {
+    const progress = typeof installmentProgress === "function" ? installmentProgress(item) : null;
+    const total = schedule.installments || item.installments || 1;
+    const index = item.installmentIndex || 0;
     return progress
-      ? `Cuota ${item.installmentIndex} de ${item.schedule.installments} · resta ${formatCurrency(progress.remainingCents)}`
-      : `Cuota ${item.installmentIndex} de ${item.schedule.installments}`;
+      ? `Cuota ${index} de ${total} · resta ${formatCurrency(progress.remainingCents)}`
+      : `Cuota ${index} de ${total}`;
   }
-  if (item.schedule.type === "monthly") {
-    return item.schedule.endMonth ? `Mensual hasta ${formatMonthLabel(item.schedule.endMonth, true)}` : "Todos los meses";
+  if (type === "monthly") {
+    return schedule.endMonth ? `Mensual hasta ${formatMonthLabel(schedule.endMonth, true)}` : "Todos los meses";
   }
   return "Una sola vez";
 }
@@ -503,11 +515,12 @@ function renderMovementCollection(container, occurrences, options = false) {
 }
 
 function renderMovements() {
+  if (!getDom().movementList || !getDom().movementTotals) return;
   const totals = getMonthTotals(getState().activeMonth);
-  const search = getDom().movementSearch.value.trim().toLocaleLowerCase("es");
-  const type = getDom().movementTypeFilter.value;
-  const status = getDom().movementStatusFilter.value;
-  const filtered = totals.occurrences.filter((item) => {
+  const search = (getDom().movementSearch?.value || "").trim().toLocaleLowerCase("es");
+  const type = getDom().movementTypeFilter?.value || "all";
+  const status = getDom().movementStatusFilter?.value || "all";
+  const filtered = (totals.occurrences || []).filter((item) => {
     const haystack = `${item.name} ${item.category} ${item.person} ${item.note}`.toLocaleLowerCase("es");
     return (!search || haystack.includes(search)) &&
       (type === "all" || item.kind === type) && (status === "all" || item.status === status);
@@ -540,5 +553,9 @@ function renderMovements() {
     scheduleLabel,
     renderMovementCollection,
     renderMovements,
+    /** Reset collapse flags when changing month (called from app.js). */
+    resetBreakdownExpanded: () => {
+      categoryBreakdownExpanded = false;
+    },
   };
 }

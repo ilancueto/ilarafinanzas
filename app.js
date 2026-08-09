@@ -71,7 +71,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.14";
+const APP_VERSION = "3.9.9.15";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -2211,6 +2211,7 @@ const homeUi = createHomeUi({
   toggleOccurrenceStatus: (...args) => toggleOccurrenceStatus(...args),
   dueStateForOccurrence,
   installmentProgress,
+  removeCategory: (...args) => removeCategory(...args),
 });
 const {
   renderDashboard,
@@ -2222,6 +2223,7 @@ const {
   renderMiniForecast,
   renderMovementCollection,
   renderMovements,
+  resetBreakdownExpanded,
 } = homeUi;
 
 // --- Proyección UI (módulo) ---
@@ -2985,21 +2987,30 @@ function render() {
     renderEmergencyChrome();
     return;
   }
-  dom.activeMonthInput.value = state.activeMonth;
-  dom.activeMonthDisplay.textContent = formatMonthLabel(state.activeMonth).toLocaleLowerCase("es");
-  dom.projectionMonthsSelect.value = String(state.settings.projectionMonths);
-  if (dom.appVersion) {
-    dom.appVersion.textContent = `${APP_CHANNEL} · v${APP_VERSION}${isSandboxProfile() ? " · prueba" : ""}`;
+  try {
+    if (dom.activeMonthInput) dom.activeMonthInput.value = state.activeMonth;
+    if (dom.activeMonthDisplay) {
+      dom.activeMonthDisplay.textContent = formatMonthLabel(state.activeMonth).toLocaleLowerCase("es");
+    }
+    if (dom.projectionMonthsSelect) {
+      dom.projectionMonthsSelect.value = String(state.settings?.projectionMonths ?? 12);
+    }
+    if (dom.appVersion) {
+      dom.appVersion.textContent = `${APP_CHANNEL} · v${APP_VERSION}${isSandboxProfile() ? " · prueba" : ""}`;
+    }
+    renderProfileChrome();
+    renderEmergencyChrome();
+    renderFormSelects();
+    renderDashboard();
+    renderMovements();
+    renderPlanned();
+    renderCards();
+    renderProjection();
+    renderSettings();
+  } catch (error) {
+    console.error("Error al renderizar la UI:", error);
+    showToast(`Error de pantalla: ${error?.message || error}`);
   }
-  renderProfileChrome();
-  renderEmergencyChrome();
-  renderFormSelects();
-  renderDashboard();
-  renderMovements();
-  renderPlanned();
-  renderCards();
-  renderProjection();
-  renderSettings();
 }
 
 function switchView(view) {
@@ -3400,13 +3411,13 @@ function openMonthPicker() {
 
 dom.prevMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, -1);
-  categoryBreakdownExpanded = false;
+  resetBreakdownExpanded?.();
   render();
   void saveState();
 });
 dom.nextMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, 1);
-  categoryBreakdownExpanded = false;
+  resetBreakdownExpanded?.();
   render();
   void saveState();
 });
@@ -3415,7 +3426,7 @@ dom.activeMonthInput.addEventListener("change", (event) => {
   if (!isValidMonthKey(event.target.value)) return;
   if (event.target.value === state.activeMonth) return;
   state.activeMonth = event.target.value;
-  categoryBreakdownExpanded = false;
+  resetBreakdownExpanded?.();
   render();
   void saveState();
 });

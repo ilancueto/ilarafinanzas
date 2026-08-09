@@ -1,5 +1,12 @@
 # Historial de cambios
 
+## 3.9.9.15 — Estable — 2026-08-09
+
+### Corregido
+- **Movimientos y Previstos en blanco**: al modularizar el home, flags de UI (`categoryBreakdownExpanded`, etc.) y `removeCategory` quedaron fuera del módulo y rompían todo el `render()` con un ReferenceError (la lista nunca se pintaba).
+- `scheduleLabel` tolera ocurrencias sin `schedule` completo.
+- `render()` envuelve cada pasada en try/catch y muestra toast si algo falla.
+
 ## 3.9.9.14 — Estable — 2026-08-09
 
 ### Drive (seguridad)
