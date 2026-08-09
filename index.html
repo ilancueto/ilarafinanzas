@@ -13,7 +13,7 @@
       <aside class="sidebar" aria-label="Navegación principal">
         <a class="brand" href="#dashboard" data-go-view="dashboard" aria-label="Ilara, ir al inicio">
           <span class="brand-logo-shell" aria-hidden="true"><img class="brand-logo" src="logo_ilara.png" alt="" /></span>
-          <small>Finanzas del hogar</small>
+          <small id="brandProfileLabel">Hogar</small>
         </a>
 
         <nav class="side-nav">
@@ -50,7 +50,6 @@
         </nav>
 
         <div class="sidebar-foot">
-          <p>Datos solo en este equipo · offline</p>
           <button id="sidebarAddBtn" class="primary-btn full-width" type="button">Nuevo movimiento</button>
         </div>
       </aside>
@@ -198,9 +197,8 @@
         <section id="movementsView" class="view" data-view-panel="movements" hidden>
           <div class="page-heading">
             <div>
-              <p class="eyebrow">Control mensual</p>
               <h1>Movimientos</h1>
-              <p class="heading-copy">Ingresos, gastos y cuotas reunidos en un solo lugar.</p>
+              <p class="heading-copy">Ingresos y gastos del mes.</p>
             </div>
             <div class="page-heading-actions">
               <button id="exportMonthCsvBtn" class="secondary-btn" type="button">CSV de este mes</button>
@@ -241,9 +239,8 @@
         <section id="plannedView" class="view" data-view-panel="planned" hidden>
           <div class="page-heading">
             <div>
-              <p class="eyebrow">Plan del mes</p>
               <h1>Previstos</h1>
-              <p class="heading-copy">Cosas que esperás cobrar o pagar. Cuando se cumplan, las confirmás y pasan a Movimientos (podés ajustar el monto).</p>
+              <p class="heading-copy">Lo que falta cobrar o pagar. Al confirmar, va a Movimientos.</p>
             </div>
             <button id="addPlannedBtn" class="primary-btn" type="button">+ Previsto</button>
           </div>
@@ -276,13 +273,13 @@
         <section id="cardsView" class="view" data-view-panel="cards" hidden>
           <div class="page-heading">
             <div>
-              <p class="eyebrow">Plásticos</p>
-              <h1 id="cardsPageTitle">Tarjetas de crédito</h1>
-              <p id="cardsPageCopy" class="heading-copy">Carga del mes, límites y resumen por tarjeta. No se suma a los KPIs del hogar hasta que generes el resumen.</p>
+              <p class="eyebrow" id="cardsPageEyebrow"></p>
+              <h1 id="cardsPageTitle">Tarjetas</h1>
+              <p id="cardsPageCopy" class="heading-copy" hidden></p>
             </div>
             <div class="cards-heading-actions">
               <button id="cardsBackBtn" class="secondary-btn" type="button" hidden>← Todas</button>
-              <button id="dashboardCardPurchaseBtnTop" class="secondary-btn" type="button">+ Gasto en tarjeta</button>
+              <button id="dashboardCardPurchaseBtnTop" class="secondary-btn" type="button">+ Gasto</button>
               <button id="addCardBtn" class="primary-btn" type="button">+ Tarjeta</button>
             </div>
           </div>
@@ -291,21 +288,22 @@
             <div class="panel-heading inline-heading">
               <div>
                 <p class="eyebrow">Dólar</p>
-                <h2>Tipo de cambio USD → ARS</h2>
-                <p>Estimativo de red (podés forzar el de tu banco).</p>
+                <h2>USD → ARS</h2>
+                <p class="heading-copy">Oficial. Si querés, poné el de tu banco.</p>
               </div>
             </div>
             <div class="cards-fx-row">
               <label>
-                <span>Cotización (ARS por 1 USD)</span>
+                <span>Cotización</span>
                 <input id="fxRateInput" type="number" min="0.01" step="0.01" inputmode="decimal" />
               </label>
-              <label class="cards-fx-check">
+              <label class="ui-switch-label">
                 <input id="fxUseManual" type="checkbox" />
-                <span>Usar valor manual</span>
+                <span class="ui-switch" aria-hidden="true"></span>
+                <span>Manual</span>
               </label>
-              <button id="fxSaveBtn" class="secondary-btn" type="button">Guardar TC</button>
-              <button id="fxRefreshBtn" class="primary-btn" type="button">Actualizar de red</button>
+              <button id="fxSaveBtn" class="secondary-btn" type="button">Guardar</button>
+              <button id="fxRefreshBtn" class="primary-btn" type="button">Actualizar</button>
             </div>
             <p id="fxStatus" class="cards-fx-status"></p>
           </article>
@@ -316,9 +314,8 @@
         <section id="projectionView" class="view" data-view-panel="projection" hidden>
           <div class="page-heading projection-heading">
             <div>
-              <p class="eyebrow">Mirar hacia adelante</p>
               <h1>Proyección</h1>
-              <p class="heading-copy">Mes a mes y desglose de gastos. Tocá un mes o una categoría para explorar. No inventa sueldos futuros.</p>
+              <p class="heading-copy">Según lo cargado.</p>
             </div>
             <div class="projection-heading-controls">
               <label class="select-inline">
@@ -330,12 +327,13 @@
                   <option value="24">24 meses</option>
                 </select>
               </label>
-              <label class="projection-toggle">
+              <label class="ui-switch-label projection-toggle">
                 <input id="projectionIncludeCards" type="checkbox" />
-                <span>Incluir tarjetas (plásticos)</span>
+                <span class="ui-switch" aria-hidden="true"></span>
+                <span>Incluir tarjetas</span>
               </label>
               <label class="select-inline projection-cut">
-                <span>¿Y si baja el ingreso?</span>
+                <span>Si baja el ingreso</span>
                 <select id="projectionIncomeCut">
                   <option value="0">Sin recorte</option>
                   <option value="5">−5%</option>
@@ -383,198 +381,233 @@
         </section>
 
         <section id="settingsView" class="view" data-view-panel="settings" hidden>
-          <div class="page-heading">
+          <div class="page-heading settings-page-heading">
             <div>
-              <p class="eyebrow">Tu espacio</p>
               <h1>Ajustes</h1>
-              <p class="heading-copy">Personalizá las personas y el punto de partida de la proyección.</p>
             </div>
           </div>
 
-          <div class="settings-grid">
-            <article class="panel data-panel profile-panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Datos</p>
-                <h2>Perfil de trabajo</h2>
-                <p>Usá el <strong>perfil de prueba</strong> para experimentar (V4 alpha, formularios, etc.) sin tocar los gastos reales. Cada perfil tiene su propia base local.</p>
-              </div>
-              <div id="profileStatus" class="profile-status" aria-live="polite"></div>
-              <div class="data-actions profile-actions">
-                <button id="profileHogarBtn" class="primary-btn" type="button">Hogar (reales)</button>
-                <button id="profilePruebaBtn" class="secondary-btn" type="button">Perfil de prueba</button>
-                <button id="profileResetPruebaBtn" class="danger-btn" type="button">Vaciar prueba</button>
-              </div>
-              <p class="form-hint">Drive solo opera en el perfil <strong>Hogar</strong> (Guardar / Cargar). En prueba no se toca la nube.</p>
-            </article>
+          <div class="settings-frame">
+            <nav class="settings-side-nav" aria-label="Secciones de ajustes">
+              <button type="button" class="is-active" data-settings-pane="hogar">Hogar</button>
+              <button type="button" data-settings-pane="datos">Datos</button>
+              <button type="button" data-settings-pane="cuenta">Cuenta</button>
+            </nav>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Hogar</p>
-                <h2>Personas</h2>
-                <p>Podés asignar cada ingreso o gasto a quien corresponda.</p>
-              </div>
-              <form id="personForm" class="inline-form">
-                <label class="grow-field">
-                  <span class="sr-only">Nombre de la persona</span>
-                  <input name="name" type="text" placeholder="Nombre o Compartido" required />
-                </label>
-                <button class="secondary-btn" type="submit">Agregar</button>
-              </form>
-              <div id="peopleList" class="chip-list"></div>
-            </article>
+            <div class="settings-panes">
+              <!-- ── Hogar ── -->
+              <div class="settings-pane is-active" data-settings-panel="hogar">
+                <p class="settings-lead">Personas, categorías y números base.</p>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Organización</p>
-                <h2>Categorías</h2>
-                <p>Administrá las categorías disponibles. La lista se muestra compacta; podés expandirla con «Ver todas».</p>
-              </div>
-              <form id="categoryForm" class="inline-form">
-                <label class="grow-field">
-                  <span class="sr-only">Nombre de la categoría</span>
-                  <input name="name" type="text" placeholder="Ej. Mascotas" required />
-                </label>
-                <button class="secondary-btn" type="submit">Agregar</button>
-              </form>
-              <div id="categoriesList" class="chip-list"></div>
-            </article>
+                <p class="settings-section-title">Personas</p>
+                <div class="settings-row">
+                  <div class="settings-row-label">Quiénes</div>
+                  <div class="settings-row-body">
+                    <form id="personForm" class="inline-form settings-inline-form">
+                      <label class="grow-field">
+                        <span class="sr-only">Nombre de la persona</span>
+                        <input name="name" type="text" placeholder="Nombre" required />
+                      </label>
+                      <button class="secondary-btn" type="submit">Agregar</button>
+                    </form>
+                    <div id="peopleList" class="chip-list"></div>
+                  </div>
+                </div>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Límites mensuales</p>
-                <h2>Presupuestos</h2>
-                <p>Definí cuánto querés destinar a cada categoría.</p>
-              </div>
-              <form id="budgetForm" class="settings-form">
-                <label><span>Mes</span><input name="monthKey" type="month" required /></label>
-                <label><span>Categoría</span><select name="category" required></select></label>
-                <label><span>Presupuesto</span><input name="amount" type="number" min="0.01" step="0.01" required /></label>
-                <button class="primary-btn" type="submit">Guardar presupuesto</button>
-              </form>
-              <div id="budgetsList" class="budget-list"></div>
-            </article>
+                <p class="settings-section-title">Categorías</p>
+                <div class="settings-row">
+                  <div class="settings-row-label">Lista</div>
+                  <div class="settings-row-body">
+                    <form id="categoryForm" class="inline-form settings-inline-form">
+                      <label class="grow-field">
+                        <span class="sr-only">Nombre de la categoría</span>
+                        <input name="name" type="text" placeholder="Ej. Mascotas" required />
+                      </label>
+                      <button class="secondary-btn" type="submit">Agregar</button>
+                    </form>
+                    <div id="categoriesList" class="chip-list"></div>
+                  </div>
+                </div>
 
-            <article class="panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Proyección</p>
-                <h2>Punto de partida</h2>
-                <p>Este saldo se usa al comenzar cada proyección.</p>
-              </div>
-              <form id="preferencesForm" class="settings-form">
-                <label>
-                  <span>Saldo inicial</span>
-                  <input name="openingBalance" type="number" step="0.01" />
-                </label>
-                <label>
-                  <span>Mes inicial del saldo</span>
-                  <input name="openingBalanceMonth" type="month" required />
-                </label>
-                <label>
-                  <span>Meses a proyectar</span>
-                  <select name="projectionMonths">
-                    <option value="6">6 meses</option>
-                    <option value="12">12 meses</option>
-                    <option value="18">18 meses</option>
-                    <option value="24">24 meses</option>
-                  </select>
-                </label>
-                <button class="primary-btn" type="submit">Guardar ajustes</button>
-              </form>
-            </article>
+                <p class="settings-section-title">Presupuestos</p>
+                <div class="settings-row settings-row-stack">
+                  <div class="settings-row-label">Límites</div>
+                  <div class="settings-row-body">
+                    <form id="budgetForm" class="settings-form">
+                      <label><span>Mes</span><input name="monthKey" type="month" required /></label>
+                      <label><span>Categoría</span><select name="category" required></select></label>
+                      <label><span>Monto</span><input name="amount" type="number" min="0.01" step="0.01" required /></label>
+                      <button class="primary-btn" type="submit">Guardar</button>
+                    </form>
+                    <div id="budgetsList" class="budget-list"></div>
+                  </div>
+                </div>
 
-            <article class="panel data-panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Nube</p>
-                <h2>Google Drive</h2>
-                <p>
-                  Dos acciones separadas (nunca se mezclan solas):
-                  <strong>Guardar</strong> sube esta PC a Drive;
-                  <strong>Cargar</strong> baja Drive y reemplaza esta PC (con respaldo previo).
-                </p>
-              </div>
-              <div id="driveSetupBlock" class="drive-setup">
-                <p class="form-hint">Una sola vez: creá un cliente OAuth “Escritorio” en Google Cloud, activá Drive API y pegá acá Client ID y Secret. Guía en README (sección Drive).</p>
-                <label>
-                  <span>Client ID</span>
-                  <input id="driveClientId" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx.apps.googleusercontent.com" />
-                </label>
-                <label>
-                  <span>Client Secret</span>
-                  <input id="driveClientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="GOCSPX-…" />
-                </label>
-                <div class="data-actions">
-                  <button id="driveSaveCredsBtn" class="secondary-btn" type="button">Guardar credenciales</button>
+                <p class="settings-section-title">Proyección</p>
+                <div class="settings-row settings-row-stack">
+                  <div class="settings-row-label">Saldo inicial</div>
+                  <div class="settings-row-body">
+                    <form id="preferencesForm" class="settings-form">
+                      <label>
+                        <span>Saldo</span>
+                        <input name="openingBalance" type="number" step="0.01" />
+                      </label>
+                      <label>
+                        <span>Desde el mes</span>
+                        <input name="openingBalanceMonth" type="month" required />
+                      </label>
+                      <label>
+                        <span>Horizonte</span>
+                        <select name="projectionMonths">
+                          <option value="6">6 meses</option>
+                          <option value="12">12 meses</option>
+                          <option value="18">18 meses</option>
+                          <option value="24">24 meses</option>
+                        </select>
+                      </label>
+                      <button class="primary-btn" type="submit">Guardar</button>
+                    </form>
+                  </div>
+                </div>
+
+                <p class="settings-section-title">Perfil</p>
+                <div class="settings-row">
+                  <div class="settings-row-label">Activo</div>
+                  <div class="settings-row-body settings-row-body-inline">
+                    <div id="profileStatus" class="profile-status" aria-live="polite"></div>
+                    <div class="data-actions profile-actions">
+                      <button id="profileHogarBtn" class="primary-btn" type="button">Hogar</button>
+                      <button id="profilePruebaBtn" class="secondary-btn" type="button">Prueba</button>
+                      <button id="profileResetPruebaBtn" class="danger-btn" type="button">Vaciar prueba</button>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="drive-status-row">
-                <p id="driveStatusText" class="drive-status" data-tone="neutral">Drive no configurado.</p>
-                <label class="drive-auto-toggle">
-                  <input id="driveAutoSyncToggle" type="checkbox" />
-                  <span>Subir cambios solos</span>
-                </label>
-              </div>
-              <p class="form-hint">
-                «Subir cambios solos» solo hace <strong>Guardar</strong> en segundo plano. Nunca baja ni pisa esta PC.
-                En una PC nueva o vacía: primero <strong>Cargar</strong>, no Guardar.
-              </p>
-              <div class="data-actions">
-                <button id="driveConnectBtn" class="primary-btn" type="button">Conectar Google</button>
-                <button id="drivePushBtn" class="primary-btn" type="button" title="Sube la copia de esta PC a Drive">Guardar en Drive</button>
-                <button id="drivePullBtn" class="secondary-btn" type="button" title="Baja la copia de Drive y la aplica acá">Cargar de Drive</button>
-                <button id="driveDisconnectBtn" class="secondary-btn" type="button">Desconectar</button>
-              </div>
-            </article>
 
-            <article id="emergencyPanel" class="panel data-panel emergency-panel" hidden>
-              <div class="panel-heading">
-                <p class="eyebrow">Recuperación</p>
-                <h2>Copia de emergencia</h2>
-                <p id="emergencyStatusCopy">Hay cambios guardados en el navegador porque SQLite falló. Podés aplicarlos a la base, exportarlos o descartarlos.</p>
-              </div>
-              <div class="data-actions">
-                <button id="emergencyApplyBtn" class="primary-btn" type="button">Aplicar a SQLite</button>
-                <button id="emergencyExportBtn" class="secondary-btn" type="button">Exportar copia</button>
-                <button id="emergencyDiscardBtn" class="danger-btn" type="button">Descartar</button>
-              </div>
-            </article>
+              <!-- ── Datos ── -->
+              <div class="settings-pane" data-settings-panel="datos" hidden>
+                <p class="settings-lead">Copias en esta PC.</p>
 
-            <article class="panel data-panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Actualizaciones</p>
-                <h2>Versión de Ilara</h2>
-                <p>Consulta GitHub Releases. Podés bajar el Setup acá mismo e instalar (modo semi-auto).</p>
-              </div>
-              <p id="updateStatusText" class="drive-status">Versión instalada: se muestra al cargar.</p>
-              <div class="data-actions">
-                <button id="checkUpdatesBtn" class="primary-btn" type="button">Buscar actualizaciones</button>
-                <button id="downloadUpdateBtn" class="secondary-btn" type="button" hidden>Descargar Setup</button>
-                <button id="installUpdateBtn" class="primary-btn" type="button" hidden>Instalar y reiniciar</button>
-                <button id="openUpdateBrowserBtn" class="secondary-btn" type="button" hidden>Abrir en navegador</button>
-                <button id="openReleasesBtn" class="secondary-btn" type="button">Ver Releases en GitHub</button>
-                <button id="exportDebugLogBtn" class="secondary-btn" type="button" title="Temporal: descarga consola/errores de esta sesión">Exportar log de diagnóstico</button>
-              </div>
-              <p class="privacy-note">Al abrir se consulta GitHub. Si hay versión nueva: descarga a una carpeta temporal, verifica SHA-256 si está en la Release, y lanza el Setup en modo silencioso (/S). Tus datos no se borran. Fallback: abrir el Setup en el navegador.</p>
-            </article>
+                <p class="settings-section-title">Archivos</p>
+                <div class="settings-row">
+                  <div class="settings-row-label">Exportar</div>
+                  <div class="settings-row-body">
+                    <div class="data-actions">
+                      <button id="exportBtn" class="secondary-btn" type="button">JSON</button>
+                      <button id="exportCsvBtn" class="secondary-btn" type="button">CSV</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">Importar</div>
+                  <div class="settings-row-body">
+                    <div class="data-actions">
+                      <button id="importBtn" class="secondary-btn" type="button">Elegir archivo</button>
+                      <input id="importFileInput" type="file" accept="application/json" hidden />
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-row settings-row-stack">
+                  <div class="settings-row-label">Backups</div>
+                  <div class="settings-row-body">
+                    <div class="backup-select-row">
+                      <select id="backupHistorySelect" aria-label="Backups recientes"></select>
+                      <button id="backupRestoreBtn" class="primary-btn" type="button">Restaurar</button>
+                      <button id="backupDownloadBtn" class="secondary-btn" type="button">Descargar</button>
+                    </div>
+                    <p class="form-hint">Cierre de mes, export y antes de Drive. Los más recientes se pueden restaurar acá.</p>
+                    <!-- contenedor oculto por compat; se rellena vía select -->
+                    <div id="backupHistoryList" class="backup-history-list" hidden></div>
+                  </div>
+                </div>
 
-            <article class="panel data-panel">
-              <div class="panel-heading">
-                <p class="eyebrow">Respaldo</p>
-                <h2>Tus datos</h2>
-                <p>Exportá una copia para pasarla a otro dispositivo o recuperarla más adelante.</p>
+                <div id="emergencyPanel" class="settings-emergency" hidden>
+                  <p class="settings-section-title">Emergencia</p>
+                  <div class="settings-row settings-row-stack">
+                    <div class="settings-row-label">Copia</div>
+                    <div class="settings-row-body">
+                      <p id="emergencyStatusCopy" class="form-hint">Hay una copia de emergencia pendiente.</p>
+                      <div class="data-actions">
+                        <button id="emergencyApplyBtn" class="primary-btn" type="button">Aplicar</button>
+                        <button id="emergencyExportBtn" class="secondary-btn" type="button">Exportar</button>
+                        <button id="emergencyDiscardBtn" class="danger-btn" type="button">Descartar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="data-actions">
-                <button id="exportBtn" class="secondary-btn" type="button">Exportar copia</button>
-                <button id="exportCsvBtn" class="secondary-btn" type="button">Exportar CSV (rango)</button>
-                <button id="importBtn" class="secondary-btn" type="button">Importar copia</button>
-                <input id="importFileInput" type="file" accept="application/json" hidden />
+
+              <!-- ── Cuenta ── -->
+              <div class="settings-pane" data-settings-panel="cuenta" hidden>
+                <p class="settings-lead">Drive y versión.</p>
+
+                <p class="settings-section-title">Google Drive</p>
+                <div id="driveSetupBlock" class="drive-setup settings-drive-setup">
+                  <p class="form-hint">Una vez: OAuth escritorio en Google Cloud + Drive API. Pegá Client ID y Secret.</p>
+                  <label>
+                    <span>Client ID</span>
+                    <input id="driveClientId" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx.apps.googleusercontent.com" />
+                  </label>
+                  <label>
+                    <span>Client Secret</span>
+                    <input id="driveClientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="GOCSPX-…" />
+                  </label>
+                  <div class="data-actions">
+                    <button id="driveSaveCredsBtn" class="secondary-btn" type="button">Guardar credenciales</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">Estado</div>
+                  <div class="settings-row-body settings-row-body-inline">
+                    <p id="driveStatusText" class="drive-status status-dot" data-tone="neutral">Sin configurar</p>
+                    <button id="driveDisconnectBtn" class="secondary-btn" type="button">Desconectar</button>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">Sincronizar</div>
+                  <div class="settings-row-body">
+                    <p class="form-hint">Guardar sube esta PC. Cargar baja Drive (con backup antes).</p>
+                    <div class="data-actions">
+                      <button id="driveConnectBtn" class="primary-btn" type="button">Conectar</button>
+                      <button id="drivePushBtn" class="primary-btn" type="button" title="Sube la copia de esta PC a Drive">Guardar</button>
+                      <button id="drivePullBtn" class="secondary-btn" type="button" title="Baja la copia de Drive y la aplica acá">Cargar</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">Auto</div>
+                  <div class="settings-row-body settings-row-body-inline">
+                    <span class="settings-row-meta">Subir cambios solos</span>
+                    <label class="ui-switch-label">
+                      <input id="driveAutoSyncToggle" type="checkbox" />
+                      <span class="ui-switch" aria-hidden="true"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <p class="settings-section-title">Ilara</p>
+                <div class="settings-row">
+                  <div class="settings-row-label">Versión</div>
+                  <div class="settings-row-body settings-row-body-inline">
+                    <p id="updateStatusText" class="drive-status">—</p>
+                    <span id="appVersion" class="settings-row-meta"></span>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">Updates</div>
+                  <div class="settings-row-body">
+                    <div class="data-actions">
+                      <button id="checkUpdatesBtn" class="primary-btn" type="button">Buscar</button>
+                      <button id="downloadUpdateBtn" class="secondary-btn" type="button" hidden>Descargar Setup</button>
+                      <button id="installUpdateBtn" class="primary-btn" type="button" hidden>Instalar</button>
+                      <button id="openUpdateBrowserBtn" class="secondary-btn" type="button" hidden>Navegador</button>
+                      <button id="openReleasesBtn" class="secondary-btn" type="button">GitHub</button>
+                      <button id="exportDebugLogBtn" class="secondary-btn" type="button" title="Temporal">Exportar log</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="backup-history-block">
-                <p class="eyebrow">Historial reciente</p>
-                <p class="heading-copy backup-history-hint">Se listan los últimos respaldos de este perfil (cierre de mes, export, antes de Drive). Los más nuevos se pueden volver a bajar.</p>
-                <div id="backupHistoryList" class="backup-history-list"></div>
-              </div>
-              <p class="privacy-note">Sin Drive: todo queda solo en este equipo. Con Drive: la copia de sync va a <strong>tu</strong> Google Drive. Actualizaciones: instalador (Setup) en GitHub Releases; el portable es legacy. <span id="appVersion"></span></p>
-            </article>
+            </div>
           </div>
         </section>
         </div>
@@ -611,7 +644,7 @@
           <label class="span-2"><span>Nota (opcional)</span><input name="note" type="text" maxlength="120" /></label>
           <label class="span-2 cards-cc-check">
             <input name="excludeFromCardTotals" type="checkbox" />
-            <span>Cuenta corriente / no sumar al total de plásticos</span>
+            <span>Cuenta corriente</span>
           </label>
         </div>
         <p class="form-hint">Cierre y vencimiento son del ciclo/resumen actual (día + mes). Actualizalos en cada resumen. Si marcás cuenta corriente (o el nombre parece “CC…” / “cuenta corriente”), va al apartado aparte y no suma a “Este mes en tarjetas” ni a la proyección de plásticos.</p>
@@ -851,7 +884,7 @@
       </form>
     </dialog>
 
-    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" popover="manual">
       <span id="toastMessage"></span>
       <button id="toastAction" class="toast-action" type="button" hidden></button>
     </div>

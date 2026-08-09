@@ -481,21 +481,28 @@ async function saveMovement(event) {
 
 async function deleteMovement() {
   if (!requireOpenMonth(getState().activeMonth, "Reabrí el mes antes de eliminar movimientos")) return;
-  const id = getDom().movementForm.elements.id.value;
-  if (!id) return;
+  const id = sanitizeText(getDom().movementForm.elements.id.value);
+  if (!id) {
+    showToast("No hay movimiento para eliminar");
+    return;
+  }
   const index = getState().transactions.findIndex((item) => item.id === id);
-  const transaction = getState().transactions[index];
-  const occurrenceKey = getDom().movementForm.elements.occurrenceKey.value;
+  const transaction = index >= 0 ? getState().transactions[index] : null;
+  const occurrenceKey = sanitizeText(getDom().movementForm.elements.occurrenceKey.value)
+    || `${id}:${getState().activeMonth}`;
   const record = getState().occurrences[occurrenceKey];
-  if (!transaction && !record) return;
-  const requestedScope = getDom().movementForm.elements.editScope.value || "current";
-  const scope = transaction?.schedule.type === "one-time" ? "all" : requestedScope;
-  const name = transaction?.name || record.name;
+  if (!transaction && !record) {
+    showToast("No se encontró el movimiento");
+    return;
+  }
+  const requestedScope = getDom().movementForm.elements.editScope?.value || "current";
+  const scope = !transaction || transaction?.schedule?.type === "one-time" ? "all" : requestedScope;
+  const name = transaction?.name || record?.name || "movimiento";
   const scopeCopy = scope === "current"
     ? "Sólo se excluirá del mes activo."
     : scope === "future"
-      ? "Se conservarán los meses anteriores y se eliminará desde el mes activo."
-      : "Se eliminará la serie, conservando únicamente meses pagados o cerrados.";
+      ? "Se conservarán los meses anteriores y se eliminará desde el mes activo (también si ya estaba pagado)."
+      : "Se eliminará por completo en meses abiertos (también si ya estaba pagado). Los meses cerrados no se tocan.";
 
   closeMovementDialog();
   const confirmed = await confirmAction({
@@ -511,6 +518,11 @@ async function deleteMovement() {
 
   const previousState = cloneState(getState());
   if (!transaction) {
+    // Solo registro materializado (sin serie): borrar la clave del mes abierto.
+    if (record?.monthKey && getState().closedMonths?.[record.monthKey]) {
+      showToast("No se puede borrar un movimiento de un mes cerrado");
+      return;
+    }
     delete getState().occurrences[occurrenceKey];
   } else if (scope === "current") {
     const occurrence = occurrenceForMonth(transaction, getState().activeMonth, getState().occurrences);
@@ -519,11 +531,7 @@ async function deleteMovement() {
       openMovementDialog(id, getState().activeMonth);
       return;
     }
-    if (occurrence.status === "paid") {
-      showToast("Desmarcá el pago o cobro antes de excluir este mes");
-      openMovementDialog(id, getState().activeMonth);
-      return;
-    }
+    // Incluye pagados: los movimientos se crean ya como "paid"; excluir del mes = skipped.
     getState().occurrences[occurrence.statusKey] = materializeOccurrence(occurrence, {
       status: "skipped",
       actualAmountCents: null,
@@ -532,11 +540,12 @@ async function deleteMovement() {
   } else if (scope === "future") {
     materializeSeriesThrough(transaction, addMonths(getState().activeMonth, -1));
     preserveProtectedOccurrences(transaction);
-    clearUnprotectedOccurrenceRecords(transaction.id, getState().activeMonth);
+    // includePaid: los movimientos se crean ya como "paid"; sin esto el item sigue en la lista.
+    clearUnprotectedOccurrenceRecords(transaction.id, getState().activeMonth, { includePaid: true });
     getState().transactions = getState().transactions.filter((item) => item.id !== id);
   } else {
     preserveProtectedOccurrences(transaction);
-    clearUnprotectedOccurrenceRecords(transaction.id);
+    clearUnprotectedOccurrenceRecords(transaction.id, "", { includePaid: true });
     getState().transactions = getState().transactions.filter((item) => item.id !== id);
   }
   if (!await saveState()) {

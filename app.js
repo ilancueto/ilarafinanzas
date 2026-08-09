@@ -318,6 +318,10 @@ const dom = {
   exportMonthCsvBtn: document.querySelector("#exportMonthCsvBtn"),
   copyPrevMonthBtn: document.querySelector("#copyPrevMonthBtn"),
   backupHistoryList: document.querySelector("#backupHistoryList"),
+  backupHistorySelect: document.querySelector("#backupHistorySelect"),
+  backupRestoreBtn: document.querySelector("#backupRestoreBtn"),
+  backupDownloadBtn: document.querySelector("#backupDownloadBtn"),
+  brandProfileLabel: document.querySelector("#brandProfileLabel"),
   dueSoonPanel: document.querySelector("#dueSoonPanel"),
   dueSoonList: document.querySelector("#dueSoonList"),
   projectionMonthsSelect: document.querySelector("#projectionMonthsSelect"),
@@ -1211,11 +1215,20 @@ function syncOccurrenceLabelsFromSeries(transaction, { onlyPaid = false, fromMon
   });
 }
 
-function clearUnprotectedOccurrenceRecords(transactionId, fromMonth = "") {
+/**
+ * Quita ocurrencias materializadas de una serie.
+ * @param {string} transactionId
+ * @param {string} [fromMonth] — si hay, solo desde ese mes (inclusive)
+ * @param {{ includePaid?: boolean }} [opts] — includePaid=true borra también pagados en meses abiertos
+ *   (necesario al eliminar: los movimientos nuevos se guardan ya como "paid")
+ */
+function clearUnprotectedOccurrenceRecords(transactionId, fromMonth = "", opts = {}) {
+  const includePaid = Boolean(opts?.includePaid);
   Object.entries(state.occurrences).forEach(([key, record]) => {
     if (record.transactionId !== transactionId) return;
     if (fromMonth && record.monthKey < fromMonth) return;
-    if (record.status === "paid" || state.closedMonths[record.monthKey]) return;
+    if (state.closedMonths[record.monthKey]) return;
+    if (!includePaid && record.status === "paid") return;
     delete state.occurrences[key];
   });
 }
@@ -1375,68 +1388,48 @@ function formatRelativeTime(iso) {
 }
 
 /**
- * Etiqueta + tono visual para el estado de Drive.
- * @returns {{ text: string, tone: "neutral" | "ok" | "warn" | "danger" | "muted" }}
+ * Etiqueta corta + tono para el estado de Drive (estilo mock: una línea).
+ * @returns {{ text: string, tone: "neutral" | "ok" | "warn" | "danger" | "muted", detail?: string }}
  */
 function describeDriveSync(status) {
   if (isSandboxProfile()) {
-    return {
-      text: "Drive pausado en Perfil de prueba. Cambiá a Hogar para sincronizar datos reales.",
-      tone: "muted",
-    };
+    return { text: "Pausado en prueba", tone: "muted" };
   }
   if (!status) {
-    return { text: "Drive no disponible en este entorno.", tone: "muted" };
+    return { text: "No disponible", tone: "muted" };
   }
   if (!status.configured) {
-    return {
-      text: "Sin configurar: pegá Client ID y Secret (una sola vez) y guardá.",
-      tone: "neutral",
-    };
+    return { text: "Sin configurar", tone: "neutral" };
   }
   if (!status.connected) {
-    return {
-      text: status.message
-        ? `Listo para conectar · ${status.message}`
-        : "Credenciales OK. Tocá «Conectar Google» y autorizá en el navegador.",
-      tone: "neutral",
-    };
-  }
-
-  const lines = [];
-  lines.push(status.email ? `Conectado · ${status.email}` : "Conectado a Google");
-
-  if (status.localDirty) {
-    lines.push("Esta PC tiene cambios que aún no están en Drive");
-  } else {
-    lines.push("Local y Drive alineados");
-  }
-
-  if (status.lastSyncAt) {
-    lines.push(`Última sync: ${formatRelativeTime(status.lastSyncAt)}`);
-  } else {
-    lines.push("Todavía no hubo una sync completa en esta PC");
-  }
-
-  lines.push(
-    status.autoSync
-      ? "Subida automática: ON (solo Guardar en segundo plano · nunca baja sola)"
-      : "Subida automática: OFF · usá «Guardar en Drive» o «Cargar de Drive»",
-  );
-
-  if (status.message && !/OK/i.test(status.message) && !status.message.includes("conectado")) {
-    lines.push(status.message);
+    return { text: "Listo para conectar", tone: "neutral" };
   }
 
   let tone = "ok";
-  if (status.localDirty) tone = "warn";
-  if (status.message && /conflict|error|fall/i.test(status.message)) tone = "danger";
+  let text = "Conectado · al día";
+  if (status.localDirty) {
+    text = "Conectado · hay cambios locales";
+    tone = "warn";
+  }
+  if (status.message && /conflict|error|fall/i.test(status.message)) {
+    text = "Conectado · revisar";
+    tone = "danger";
+  }
 
-  return { text: lines.join("\n"), tone };
+  // Detalle opcional (email / última sync) — no se mete en el texto principal.
+  const detailParts = [];
+  if (status.email) detailParts.push(status.email);
+  if (status.lastSyncAt) detailParts.push(`sync ${formatRelativeTime(status.lastSyncAt)}`);
+  return {
+    text,
+    tone,
+    detail: detailParts.join(" · ") || "",
+  };
 }
 
 function formatDriveSyncLabel(status) {
-  return describeDriveSync(status).text.replace(/\n/g, " · ");
+  const d = describeDriveSync(status);
+  return d.detail ? `${d.text} · ${d.detail}` : d.text;
 }
 
 function hasEmergencyCopy() {
@@ -1541,8 +1534,13 @@ function renderDriveStatus(status = driveStatus) {
   driveStatus = status;
   if (!dom.driveStatusText) return;
   const described = describeDriveSync(status);
-  // Varias líneas: legible en Ajustes (no un solo string interminable).
-  dom.driveStatusText.textContent = described.text;
+  // Una línea sobria + punto de color (mock Ajustes).
+  dom.driveStatusText.replaceChildren();
+  const label = element("span", "status-dot-label", driveBusy ? "Trabajando…" : described.text);
+  dom.driveStatusText.append(label);
+  if (described.detail && !driveBusy) {
+    dom.driveStatusText.append(element("span", "status-dot-detail", described.detail));
+  }
   dom.driveStatusText.dataset.tone = described.tone;
   if (driveBusy) {
     dom.driveStatusText.dataset.busy = "true";
@@ -2046,49 +2044,108 @@ function redownloadBackupHistoryEntry(entryId) {
   showToast("Respaldo descargado de nuevo");
 }
 
+function formatBackupHistoryOption(entry) {
+  const when = entry.createdAt
+    ? new Date(entry.createdAt).toLocaleString("es-AR", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    : "sin fecha";
+  const label = entry.label || "respaldo";
+  const mov = `${entry.transactions || 0} mov.`;
+  const cache = entry.content ? "" : " · solo registro";
+  return `${when} — ${label} · ${mov}${cache}`;
+}
+
 function renderBackupHistory() {
-  if (!dom.backupHistoryList) return;
   const list = loadBackupHistory();
-  dom.backupHistoryList.replaceChildren();
-  if (!list.length) {
-    dom.backupHistoryList.append(
-      element("p", "backup-history-empty", "Todavía no hay respaldos registrados en este perfil."),
-    );
+  const select = dom.backupHistorySelect;
+  if (select) {
+    const previous = select.value;
+    select.replaceChildren();
+    if (!list.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Sin backups todavía";
+      select.append(opt);
+      select.disabled = true;
+    } else {
+      select.disabled = false;
+      list.forEach((entry) => {
+        const opt = document.createElement("option");
+        opt.value = entry.id;
+        opt.textContent = formatBackupHistoryOption(entry);
+        if (!entry.content) opt.dataset.noContent = "1";
+        select.append(opt);
+      });
+      if (previous && list.some((e) => e.id === previous)) select.value = previous;
+    }
+  }
+  if (dom.backupRestoreBtn) {
+    const selected = list.find((e) => e.id === select?.value);
+    dom.backupRestoreBtn.disabled = !selected?.content;
+  }
+  if (dom.backupDownloadBtn) {
+    const selected = list.find((e) => e.id === select?.value);
+    dom.backupDownloadBtn.disabled = !selected?.content;
+  }
+  // Lista legacy oculta: no hace falta rellenarla.
+  if (dom.backupHistoryList) dom.backupHistoryList.replaceChildren();
+}
+
+async function restoreBackupHistoryEntry(entryId) {
+  const entry = loadBackupHistory().find((item) => item.id === entryId);
+  if (!entry?.content) {
+    showToast("Ese backup ya no está en caché");
     return;
   }
-  list.forEach((entry) => {
-    const row = element("div", "backup-history-row");
-    const copy = element("div", "backup-history-copy");
-    const when = entry.createdAt
-      ? formatRelativeTime(entry.createdAt)
-      : "sin fecha";
-    const sizeKb = entry.sizeBytes
-      ? `${Math.max(1, Math.round(entry.sizeBytes / 1024))} KB`
-      : "";
-    copy.append(
-      element("strong", "", entry.label || "respaldo"),
-      element(
-        "small",
-        "",
-        [
-          when,
-          entry.activeMonth ? formatMonthLabel(entry.activeMonth, true) : "",
-          `${entry.transactions || 0} mov.`,
-          sizeKb,
-        ].filter(Boolean).join(" · "),
-      ),
-    );
-    const actions = element("div", "backup-history-actions");
-    if (entry.content) {
-      const downloadBtn = element("button", "text-btn", "Descargar");
-      downloadBtn.type = "button";
-      downloadBtn.addEventListener("click", () => redownloadBackupHistoryEntry(entry.id));
-      actions.append(downloadBtn);
-    } else {
-      actions.append(element("small", "backup-history-expired", "Solo registro"));
+  try {
+    const parsed = JSON.parse(entry.content);
+    const importedState = parseBackup(parsed);
+    const confirmed = await confirmAction({
+      title: "Restaurar backup",
+      copy: "Se reemplazan los datos actuales. Antes se guarda una copia de seguridad.",
+      details: summarizeBackup(importedState),
+      confirmLabel: "Restaurar",
+      danger: true,
+    });
+    if (!confirmed) return;
+    const previousState = cloneState(state);
+    downloadBackup(previousState, "antes-de-restaurar");
+    state = importedState;
+    if (!await saveState()) {
+      state = previousState;
+      switchView(state.activeView);
+      render();
+      return;
     }
-    row.append(copy, actions);
-    dom.backupHistoryList.append(row);
+    switchView(state.activeView);
+    render();
+    showToast("Backup restaurado");
+  } catch (error) {
+    console.warn("No se pudo restaurar el backup.", error);
+    showToast("No se pudo restaurar ese backup");
+  }
+}
+
+function wireSettingsPanes() {
+  const nav = document.querySelector(".settings-side-nav");
+  if (!nav || nav.dataset.wired === "1") return;
+  nav.dataset.wired = "1";
+  nav.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-settings-pane]");
+    if (!btn) return;
+    const paneId = btn.dataset.settingsPane;
+    nav.querySelectorAll("[data-settings-pane]").forEach((el) => {
+      el.classList.toggle("is-active", el === btn);
+    });
+    document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+      const active = panel.dataset.settingsPanel === paneId;
+      panel.classList.toggle("is-active", active);
+      panel.hidden = !active;
+    });
   });
 }
 
@@ -2315,6 +2372,9 @@ function renderProfileChrome() {
   const sandbox = isSandboxProfile();
   if (dom.profileSandboxBanner) dom.profileSandboxBanner.hidden = !sandbox;
   document.body.dataset.dataProfile = dataProfile?.id || "hogar";
+  if (dom.brandProfileLabel) {
+    dom.brandProfileLabel.textContent = sandbox ? "Prueba" : "Hogar";
+  }
   if (dom.profileStatus) {
     if (!dataProfile) {
       profileStatusFallback();
@@ -2322,8 +2382,8 @@ function renderProfileChrome() {
     }
     dom.profileStatus.dataset.tone = sandbox ? "sandbox" : "hogar";
     dom.profileStatus.textContent = sandbox
-      ? `Activo: Perfil de prueba · base “${dataProfile.databaseFile}”. Experimentá libre: no se mezcla con el hogar ni con Drive.`
-      : `Activo: Hogar (datos reales) · base “${dataProfile.databaseFile}”. Este es el perfil que usa Google Drive.`;
+      ? "Perfil de prueba"
+      : "Hogar (datos reales)";
   }
   if (dom.profileHogarBtn) {
     dom.profileHogarBtn.disabled = profileBusy || (!sandbox && Boolean(dataProfile));
@@ -2343,8 +2403,7 @@ function renderProfileChrome() {
 function profileStatusFallback() {
   if (!dom.profileStatus) return;
   dom.profileStatus.dataset.tone = "hogar";
-  dom.profileStatus.textContent =
-    "Perfiles solo en la app de escritorio. En el navegador se usa un único almacenamiento local.";
+  dom.profileStatus.textContent = "Hogar";
 }
 
 async function refreshDataProfile() {
@@ -3422,6 +3481,14 @@ function hideToast() {
   dom.toast.classList.remove("is-visible");
   dom.toastAction.hidden = true;
   dom.toastAction.onclick = null;
+  // Sacar del top layer (popover) si está activo; si no, ignore.
+  try {
+    if (typeof dom.toast.hidePopover === "function" && dom.toast.matches?.(":popover-open")) {
+      dom.toast.hidePopover();
+    }
+  } catch {
+    /* popover no soportado o ya cerrado */
+  }
 }
 
 function showToast(message, action = null) {
@@ -3437,6 +3504,15 @@ function showToast(message, action = null) {
     };
   }
   dom.toast.classList.add("is-visible");
+  // Popover top-layer: el toast queda POR ENCIMA de <dialog> (límite de tarjeta, etc.).
+  try {
+    if (typeof dom.toast.showPopover === "function") {
+      if (!dom.toast.hasAttribute("popover")) dom.toast.setAttribute("popover", "manual");
+      dom.toast.showPopover();
+    }
+  } catch {
+    /* fallback: position fixed + z-index */
+  }
   toastTimer = window.setTimeout(hideToast, action ? 12000 : 3000);
 }
 
@@ -3653,6 +3729,15 @@ dom.exportBtn.addEventListener("click", exportData);
 dom.exportCsvBtn.addEventListener("click", () => exportCsv());
 dom.importBtn.addEventListener("click", () => dom.importFileInput.click());
 dom.importFileInput.addEventListener("change", () => importData(dom.importFileInput.files[0]));
+dom.backupHistorySelect?.addEventListener("change", () => renderBackupHistory());
+dom.backupRestoreBtn?.addEventListener("click", () => {
+  const id = dom.backupHistorySelect?.value;
+  if (id) void restoreBackupHistoryEntry(id);
+});
+dom.backupDownloadBtn?.addEventListener("click", () => {
+  const id = dom.backupHistorySelect?.value;
+  if (id) redownloadBackupHistoryEntry(id);
+});
 dom.checkUpdatesBtn?.addEventListener("click", () => void checkForAppUpdates({ interactive: true }));
 dom.downloadUpdateBtn?.addEventListener("click", () => void downloadPendingUpdate({ interactive: true }));
 dom.installUpdateBtn?.addEventListener("click", () => void installPendingUpdateAndRestart());
@@ -3664,6 +3749,7 @@ dom.updateBannerLaterBtn?.addEventListener("click", () => {
 });
 dom.openReleasesBtn?.addEventListener("click", () => void openBrowserUrl(GITHUB_RELEASES_URL));
 dom.exportDebugLogBtn?.addEventListener("click", () => exportDebugLog());
+wireSettingsPanes();
 wireDriveUi();
 
 dom.profileHogarBtn?.addEventListener("click", () => void switchDataProfile("hogar"));
@@ -3902,7 +3988,7 @@ async function initializeApp() {
   render();
   await wireDesktopShell();
   if (initializationWarning) showToast(initializationWarning);
-  // Cotización estimativa al abrir (no bloquea la UI).
+  // Cotización oficial al abrir (no bloquea la UI).
   void refreshUsdRate();
   // Updates: consulta silenciosa al abrir (banner si hay versión nueva).
   void checkForAppUpdates({ interactive: false });

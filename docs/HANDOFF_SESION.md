@@ -18,7 +18,7 @@ Canal: Estable
 | v3.9.9.14 | Drive Guardar/Cargar |
 | v3.9.9.15 | flags categoryBreakdown en home-ui |
 | v3.9.9.16 | cloneState(state) → getState() en cards/planned |
-| **siguiente** | buildProjection faltante en home-ui (causa real del blank) + botón export log |
+| **v3.9.9.17** | buildProjection en home-ui + log diagnóstico + render por pasos |
 
 ## Bug activo (reproducido)
 

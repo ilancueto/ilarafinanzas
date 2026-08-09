@@ -189,44 +189,42 @@ function openPlannedDialog(id = "") {
     showToast("Reabrí el mes del previsto antes de editarlo");
     return;
   }
-  getDom().plannedForm.reset();
-  fillSelectOptions(getDom().plannedForm.elements.category, getState().categories, {
+  const form = getDom().plannedForm;
+  form.reset();
+  fillSelectOptions(form.elements.category, getState().categories, {
     preserve: false,
     extra: item?.category ? [item.category] : [],
   });
-  fillSelectOptions(getDom().plannedForm.elements.person, getState().people.map((person) => person.name), {
+  fillSelectOptions(form.elements.person, getState().people.map((person) => person.name), {
     preserve: false,
     extra: item?.person ? [item.person] : [],
   });
   const prefs = loadFormPrefs();
-  getDom().plannedForm.elements.id.value = item?.id || "";
-  getDom().plannedForm.elements.kind.value = item?.kind || prefs.kind || "expense";
-  getDom().plannedForm.elements.name.value = item?.name || "";
-  setSelectValue(getDom().plannedForm.elements.category, item?.category || prefs.category || getState().categories[0] || "Otros");
-  setSelectValue(getDom().plannedForm.elements.person, item?.person || prefs.person || getState().people[0]?.name || "Compartido");
-  getDom().plannedForm.elements.amount.value = item ? fromCents(item.amountCents) : "";
-  getDom().plannedForm.elements.monthKey.value = item?.monthKey || getState().activeMonth;
-  getDom().plannedForm.elements.recurrence.value = item?.recurrence || "once";
-  getDom().plannedForm.elements.endMonth.value = item?.endMonth || "";
-  if (getDom().plannedForm.elements.dueDate) {
+  if (form.elements.id) form.elements.id.value = item?.id || "";
+  // kind es radio: RadioNodeList acepta .value
+  if (form.elements.kind) form.elements.kind.value = item?.kind || prefs.kind || "expense";
+  if (form.elements.name) form.elements.name.value = item?.name || "";
+  setSelectValue(form.elements.category, item?.category || prefs.category || getState().categories[0] || "Otros");
+  setSelectValue(form.elements.person, item?.person || prefs.person || getState().people[0]?.name || "Compartido");
+  if (form.elements.amount) form.elements.amount.value = item ? fromCents(item.amountCents) : "";
+  // monthKey NO está en el HTML: se deriva de dueDate al guardar. No escribir elements.monthKey.
+  if (form.elements.recurrence) form.elements.recurrence.value = item?.recurrence || "once";
+  if (form.elements.endMonth) form.elements.endMonth.value = item?.endMonth || "";
+  if (form.elements.dueDate) {
     const fallbackDay = new Date().getDate();
-    getDom().plannedForm.elements.dueDate.value = item?.dueDate
+    form.elements.dueDate.value = item?.dueDate
       || (item?.dueDay ? clampDateToMonth(item.monthKey || getState().activeMonth, item.dueDay) : "")
       || clampDateToMonth(getState().activeMonth, fallbackDay)
       || `${getState().activeMonth}-01`;
   }
-  // monthKey ya no se edita a mano: se deriva de la fecha.
-  if (getDom().plannedForm.elements.monthKey) {
-    getDom().plannedForm.elements.monthKey.value = item?.monthKey || getState().activeMonth;
-  }
-  getDom().plannedForm.elements.note.value = item?.note || "";
+  if (form.elements.note) form.elements.note.value = item?.note || "";
   if (getDom().plannedDialogTitle) {
     getDom().plannedDialogTitle.textContent = item ? "Editar previsto" : "Nuevo previsto";
   }
   if (getDom().deletePlannedBtn) getDom().deletePlannedBtn.hidden = !item;
   updatePlannedFormFields();
-  getDom().plannedDialog.showModal();
-  window.setTimeout(() => getDom().plannedForm.elements.name.focus(), 40);
+  if (!getDom().plannedDialog.open) getDom().plannedDialog.showModal();
+  requestAnimationFrame(() => form.elements.name?.focus?.());
 }
 
 async function savePlannedItem(event) {
@@ -335,55 +333,30 @@ async function deletePlannedItem() {
   });
 }
 
-/** Abre un alta nueva con los datos del movimiento que se está editando. */
+/**
+ * Duplicar: no cierra/reabre el dialog (eso vaciaba el form por method=dialog / race).
+ * Deja los campos tal cual y limpia id para que Guardar cree un movimiento nuevo.
+ */
 function duplicateMovementFromDialog() {
   if (!requireOpenMonth(getState().activeMonth, "Reabrí el mes antes de duplicar")) return;
-  const formData = new FormData(getDom().movementForm);
-  const draft = {
-    kind: formData.get("kind") || "expense",
-    name: sanitizeText(formData.get("name")),
-    category: formData.get("category"),
-    person: formData.get("person"),
-    amount: formData.get("amount"),
-    scheduleType: formData.get("scheduleType") || "one-time",
-    startMonth: getState().activeMonth,
-    installments: formData.get("installments") || 2,
-    endMonth: "",
-    dueDate: formData.get("dueDate"),
-    dueDay: formData.get("dueDay"),
-    note: formData.get("note"),
-  };
-  closeMovementDialog();
-  openMovementDialog();
-  // Rellenar después de abrir limpio.
-  const kind = draft.kind === "income" ? "income" : "expense";
-  [...getDom().movementForm.elements.kind].forEach((input) => {
-    input.checked = input.value === kind;
-  });
-  if (draft.name) getDom().movementForm.elements.name.value = draft.name;
-  setSelectValue(getDom().movementForm.elements.category, draft.category || getState().categories[0] || "Otros");
-  setSelectValue(getDom().movementForm.elements.person, draft.person || getState().people[0]?.name || "Compartido");
-  if (draft.amount !== null && draft.amount !== undefined && draft.amount !== "") {
-    getDom().movementForm.elements.amount.value = draft.amount;
-  }
-  getDom().movementForm.elements.startMonth.value = getState().activeMonth;
-  getDom().movementForm.elements.scheduleType.value = draft.scheduleType;
-  getDom().movementForm.elements.installments.value = draft.installments;
-  getDom().movementForm.elements.endMonth.value = "";
-  if (getDom().movementForm.elements.dueDate) {
-    getDom().movementForm.elements.dueDate.value = draft.dueDate
-      || (draft.dueDay ? clampDateToMonth(getState().activeMonth, draft.dueDay) : "");
-  } else if (getDom().movementForm.elements.dueDay) {
-    getDom().movementForm.elements.dueDay.value = draft.dueDay || "";
-  }
-  getDom().movementForm.elements.note.value = draft.note || "";
-  getDom().editScopeField.hidden = true;
+  const form = getDom().movementForm;
+  if (!form) return;
+  // Quitar identidad: al guardar se crea serie nueva con estos datos.
+  if (form.elements.id) form.elements.id.value = "";
+  if (form.elements.occurrenceKey) form.elements.occurrenceKey.value = "";
+  // Copia en el mes activo (no en el mes de origen de la serie).
+  if (form.elements.startMonth) form.elements.startMonth.value = getState().activeMonth;
+  if (form.elements.endMonth) form.elements.endMonth.value = "";
+  if (getDom().editScopeField) getDom().editScopeField.hidden = true;
+  if (form.elements.editScope) form.elements.editScope.value = "all";
   if (getDom().duplicateMovementBtn) getDom().duplicateMovementBtn.hidden = true;
   if (getDom().deleteMovementBtn) getDom().deleteMovementBtn.hidden = true;
-  getDom().movementDialogTitle.textContent = "Duplicar movimiento";
+  if (getDom().movementDialogTitle) {
+    getDom().movementDialogTitle.textContent = "Duplicar movimiento";
+  }
   updateScheduleFields();
   showToast("Revisá y guardá la copia (queda como movimiento nuevo)");
-  requestAnimationFrame(() => getDom().movementForm.elements.name?.focus?.());
+  requestAnimationFrame(() => form.elements.name?.focus?.());
 }
 
 function openPlannedConfirm(id) {

@@ -74,15 +74,15 @@ function renderCardsFxBar() {
   if (getDom().fxStatus) {
     const parts = [];
     if (getState().fx.apiUsdArs) {
-      parts.push(`API ${getState().fx.apiLabel || "dólar"}: $ ${formatFxRate(getState().fx.apiUsdArs)}`);
+      parts.push(`Oficial: $ ${formatFxRate(getState().fx.apiUsdArs)}`);
       if (getState().fx.apiUpdatedAt) parts.push(`act. ${getState().fx.apiUpdatedAt}`);
     } else {
-      parts.push("Sin cotización de red todavía");
+      parts.push("Sin cotización oficial todavía");
     }
     if (getState().fx.useManual && getState().fx.manualUsdArs) {
       parts.push(`Usando manual: $ ${formatFxRate(getState().fx.manualUsdArs)}`);
     } else if (getState().fx.apiUsdArs) {
-      parts.push("Usando cotización de red (estimativa)");
+      parts.push("Usando oficial");
     }
     getDom().fxStatus.textContent = parts.join(" · ");
   }
@@ -147,9 +147,8 @@ function renderCardsListView() {
   const hero = element("article", "panel cards-hero");
   const heroHead = element("div", "panel-heading");
   heroHead.append(
-    element("p", "eyebrow", `Carga de ${formatMonthLabel(getState().activeMonth)}`),
-    element("h2", "", "Este mes en tarjetas"),
-    element("p", "", "Cuotas que caen + fijos + compras del mes. Estimado en ARS (con TC). No es el resumen del banco."),
+    element("p", "eyebrow", formatMonthLabel(getState().activeMonth)),
+    element("h2", "", "Este mes"),
   );
   hero.append(heroHead);
   const heroValue = element("div", "cards-hero-value");
@@ -158,30 +157,24 @@ function renderCardsListView() {
   const chips = element("div", "cards-hero-chips");
   const totalForPct = Math.max(1, monthLoad.totalArs);
   [
-    ["Cuotas del mes", monthLoad.installmentArs, "Planes en cuotas que caen este mes"],
-    ["Fijos mensuales", monthLoad.fixedArs, "Cargos fijos que se repiten"],
-    ["Compras del mes", monthLoad.purchaseArs, "Gastos de un solo pago en este resumen"],
-  ].forEach(([label, cents, hint]) => {
+    ["Cuotas", monthLoad.installmentArs],
+    ["Fijos", monthLoad.fixedArs],
+    ["Compras", monthLoad.purchaseArs],
+  ].forEach(([label, cents]) => {
     const chip = element("div", "cards-hero-chip");
     const pct = monthLoad.totalArs > 0 ? Math.round((cents / totalForPct) * 100) : 0;
-    chip.title = hint;
     chip.append(
       element("span", "", label),
       element("strong", "", formatMoneyAmount(cents, "ARS")),
-      element("small", "", monthLoad.totalArs > 0 ? `${pct}% del total` : "—"),
+      element("small", "", monthLoad.totalArs > 0 ? `${pct}%` : "—"),
     );
     chips.append(chip);
   });
   hero.append(chips);
-  hero.append(element(
-    "p",
-    "cards-charge-meta",
-    "Desglose solo de plásticos (sin cuentas corrientes). Cuotas = lo que cae este mes · Fijos = abonos · Compras = un pago del resumen.",
-  ));
 
   if (monthLoad.byCard.length) {
     const rank = element("div", "cards-rank");
-    rank.append(element("p", "cards-rank-title", "Quién pesa más este mes"));
+    rank.append(element("p", "cards-rank-title", "Por tarjeta"));
     const max = Math.max(...monthLoad.byCard.map((row) => row.totalArs), 1);
     monthLoad.byCard.forEach((row) => {
       const barRow = element("button", "cards-rank-row");
@@ -252,13 +245,13 @@ function renderCardsListView() {
   const plasticCards = creditCardsForTotals(getState().creditCards);
   const tablePanel = element("article", "panel cards-table-panel");
   tablePanel.append(
-    element("p", "eyebrow", "Tus plásticos"),
+    element("p", "eyebrow", "Listado"),
     element("h2", "", "Tarjetas"),
   );
   if (!plasticCards.length) {
     tablePanel.append(emptyState(
-      "Sin tarjetas todavía",
-      "Agregá una tarjeta para compras, cuotas y fijos del plástico.",
+      "Sin tarjetas",
+      "Agregá una para cuotas, fijos y compras.",
     ));
   } else {
     const table = element("div", "cards-table");
@@ -306,28 +299,23 @@ function renderCardsListView() {
   }
   getDom().cardsRoot.append(tablePanel);
 
-  // Cuentas corrientes (ej. CC Mara): detalle visible, no suman a “Este mes en tarjetas”.
+  // Cuentas corrientes: sección aparte, sin re-explicar el total.
   const ccLoad = getCuentaCorrienteMonthLoad({ creditCards: getState().creditCards, cardCharges: getState().cardCharges, monthKey: getState().activeMonth, activeMonth: getState().activeMonth, fx: getState().fx });
   const ccPanel = element("article", "panel cards-cc-panel");
   ccPanel.append(
-    element("p", "eyebrow", "Fuera del total de tarjetas"),
+    element("p", "eyebrow", "Cuentas corrientes"),
     element("h2", "", "Cuentas corrientes"),
-    element(
-      "p",
-      "heading-copy",
-      "No suman al total de plásticos (ej. descuento de sueldo). Acá ves el detalle por separado.",
-    ),
   );
   if (!ccLoad.byCard.length && !creditCardsCuentaCorriente(getState().creditCards).length) {
     ccPanel.append(element(
       "p",
       "cards-muted",
-      "Ninguna cuenta marcada. Editá la tarjeta y activá “Cuenta corriente (no sumar a tarjetas)”.",
+      "Ninguna. Marcá una tarjeta como cuenta corriente al editarla.",
     ));
   } else {
     const totalLine = element("div", "cards-cc-total");
     totalLine.append(
-      element("span", "", `Movimiento del mes · ${formatMonthLabel(getState().activeMonth)}`),
+      element("span", "", formatMonthLabel(getState().activeMonth)),
       element("strong", "", formatMoneyAmount(ccLoad.totalArs, "ARS")),
     );
     ccPanel.append(totalLine);
@@ -368,8 +356,7 @@ function renderCardDetailView(card) {
   );
   if (isCuentaCorrienteCard(card)) {
     const notice = element("p", "cards-cc-notice");
-    notice.textContent =
-      "Cuenta corriente: no suma al total de “Este mes en tarjetas” ni a la proyección de plásticos.";
+    notice.textContent = "Cuenta corriente";
     head.append(notice);
   }
   const meta = [
@@ -532,19 +519,18 @@ function renderCards() {
   const selected = getState().creditCards.find((card) => card.id === selectedCardId) || null;
   if (getDom().cardsBackBtn) getDom().cardsBackBtn.hidden = !selected;
   if (getDom().cardsPageTitle) {
-    getDom().cardsPageTitle.textContent = selected ? selected.name : "Tarjetas de crédito";
+    getDom().cardsPageTitle.textContent = selected ? selected.name : "Tarjetas";
+  }
+  const eyebrow = getDom().cardsPageEyebrow || document.querySelector("#cardsPageEyebrow");
+  if (eyebrow) {
+    eyebrow.textContent = selected
+      ? (isCuentaCorrienteCard(selected) ? "Cuenta corriente" : "Tarjeta")
+      : formatMonthLabel(getState().activeMonth);
   }
   if (getDom().cardsPageCopy) {
-    if (selected && isCuentaCorrienteCard(selected)) {
-      getDom().cardsPageCopy.textContent =
-        "Cuenta corriente: detalle de movimientos. No suma a la carga de tarjetas (ya descontada del sueldo).";
-    } else if (selected) {
-      getDom().cardsPageCopy.textContent =
-        "Detalle del plástico: compras, cuotas, fijos y generar resumen del mes.";
-    } else {
-      getDom().cardsPageCopy.textContent =
-        "Carga del mes y plásticos. Las cuentas corrientes (ej. CC Mara) van aparte y no suman al total.";
-    }
+    // Subtítulo largo retirado; solo se usa en detalle si hace falta un hint corto.
+    getDom().cardsPageCopy.hidden = true;
+    getDom().cardsPageCopy.textContent = "";
   }
 
   getDom().cardsRoot.replaceChildren();
@@ -945,7 +931,7 @@ async function removeCreditCard(cardId) {
   if (!card) return;
   const confirmed = await confirmAction({
     title: "Eliminar tarjeta",
-    copy: `¿Eliminar “${card.name}” y todos sus cargos? No afecta los KPIs del hogar.`,
+    copy: `¿Eliminar “${card.name}” y todos sus cargos?`,
     confirmLabel: "Eliminar",
     danger: true,
   });
@@ -1173,33 +1159,15 @@ async function unmarkCardCuotaPaid(chargeId) {
 
 async function refreshUsdRate() {
   try {
-    // Prefer blue sell as a household estimate; fallback to official.
-    let rate = null;
-    let label = "";
-    let updated = "";
-    try {
-      const blue = await fetch("https://dolarapi.com/v1/dolares/blue", { cache: "no-store" });
-      if (blue.ok) {
-        const data = await blue.json();
-        rate = Number(data.venta);
-        label = "dólar blue (venta)";
-        updated = data.fechaActualizacion
-          ? new Date(data.fechaActualizacion).toLocaleString("es-AR")
-          : new Date().toLocaleString("es-AR");
-      }
-    } catch {
-      // try next source
-    }
-    if (!Number.isFinite(rate) || rate <= 0) {
-      const official = await fetch("https://dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
-      if (!official.ok) throw new Error("sin cotización");
-      const data = await official.json();
-      rate = Number(data.venta);
-      label = "dólar oficial (venta)";
-      updated = data.fechaActualizacion
-        ? new Date(data.fechaActualizacion).toLocaleString("es-AR")
-        : new Date().toLocaleString("es-AR");
-    }
+    // Solo dólar oficial (venta). No usar blue.
+    const official = await fetch("https://dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
+    if (!official.ok) throw new Error("sin cotización");
+    const data = await official.json();
+    const rate = Number(data.venta);
+    const label = "oficial";
+    const updated = data.fechaActualizacion
+      ? new Date(data.fechaActualizacion).toLocaleString("es-AR")
+      : new Date().toLocaleString("es-AR");
     if (!Number.isFinite(rate) || rate <= 0) throw new Error("cotización inválida");
     const previousState = cloneState(getState());
     getState().fx.apiUsdArs = rate;
@@ -1212,10 +1180,10 @@ async function refreshUsdRate() {
       return;
     }
     render();
-    showToast(`Cotización actualizada: $ ${formatFxRate(rate)} (${label})`);
+    showToast(`Cotización actualizada: $ ${formatFxRate(rate)}`);
   } catch (error) {
-    console.warn("No se pudo obtener el dólar.", error);
-    showToast("No pudimos consultar el dólar. Podés cargar un valor manual.");
+    console.warn("No se pudo obtener el dólar oficial.", error);
+    showToast("No pudimos consultar el dólar oficial. Podés cargar un valor manual.");
   }
 }
 

@@ -269,7 +269,7 @@ function renderProjection() {
   const categories = categoryTotalsFromExpenses(selectedExpenses);
   if (withCards && selectedEnriched?.cardsCents > 0) {
     categories.push({
-      category: "Tarjetas (estimado plásticos)",
+      category: "Tarjetas",
       cents: selectedEnriched.cardsCents,
       isCards: true,
     });
@@ -317,7 +317,7 @@ function renderProjection() {
           barRow.addEventListener("click", () => selectProjectionCategory(row.category));
         } else {
           barRow.disabled = true;
-          barRow.title = "Carga de plásticos (sin cuentas corrientes). No es un resumen generado en Movimientos.";
+          barRow.title = "Carga de tarjetas del mes";
         }
         getDom().projectionBreakdown.append(barRow);
       });

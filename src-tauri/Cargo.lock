@@ -1526,7 +1526,7 @@ dependencies = [
 
 [[package]]
 name = "ilara-finanzas"
-version = "3.9.9+13"
+version = "3.9.9+17"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.2.17",

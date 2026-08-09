@@ -333,7 +333,32 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   border-color: rgba(212, 165, 116, 0.4);
   background: var(--green-soft);
 }
-.filter-bar input, .filter-bar select { border: 0; background: transparent; min-height: 32px; }
+/* Fondo sólido + color explícito: transparent + WebView2 pintaba select blanco con letra clara. */
+.filter-bar input,
+.filter-bar select {
+  border: 0;
+  min-height: 32px;
+  color: var(--ink);
+  background-color: var(--surface-2);
+  background-image: none;
+}
+.filter-bar select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.1rem;
+  background-color: var(--surface-2);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1.5 1.75L6 6.25L10.5 1.75' stroke='%23c4b5a8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 8px;
+  color-scheme: dark;
+}
+.filter-bar select option,
+select option {
+  color: var(--ink);
+  background-color: var(--surface-2);
+}
 .filter-bar label:not(.search-field) { min-width: 150px; border-left: 1px solid var(--line); }
 .search-field { position: relative; }
 .search-field::before { position: absolute; top: 11px; left: 11px; width: 8px; height: 8px; border: 1.5px solid var(--muted); border-radius: 50%; content: ""; }
