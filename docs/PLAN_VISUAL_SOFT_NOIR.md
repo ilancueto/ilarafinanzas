@@ -88,8 +88,17 @@ Fuera de este plan visual. Solo cuando el producto local esté estable y se prio
 | 1 QA Soft Noir | hecha (validada en app) |
 | 2 Split CSS | hecha |
 | 3 Release tema | hecha (3.9.9.13 Setup listo; publish GitHub opcional) |
-| 4 Modularizar JS | pendiente |
+| 4 Modularizar JS | hecha (4.1–4.5) |
 | 5 Multi-PC | fuera de alcance ahora |
+
+### Etapa 4 — subetapas
+| Sub | Qué | Estado |
+|-----|-----|--------|
+| 4.1 | `cards-core.js` + tests + wrappers en app.js | hecha |
+| 4.2 | UI tarjetas (`cards-ui.js` factory + wiring) | hecha |
+| 4.3 | `planned-core.js` + `planned-ui.js` | hecha |
+| 4.4 | `projection-ui.js` | hecha |
+| 4.5 | `home-ui.js` + `movements-ui.js` | hecha |
 
 ### Etapa 1 — parches hechos
 - Superficies anidadas: chips/KPIs de tarjetas, forecast, personas, backups usan `--surface-2` (no `--paper`)

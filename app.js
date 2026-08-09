@@ -21,6 +21,35 @@ import {
   toCents,
 } from "./state-core.js";
 import {
+  buildCardProjection as calculateCardProjection,
+  cardCuotaCents as cardCuotaCentsCore,
+  cardNextCuotaCents as cardNextCuotaCentsCore,
+  cardRemainingCents as cardRemainingCentsCore,
+  cardRemainingInstallments as cardRemainingInstallmentsCore,
+  chargeAmountArsForLimit as chargeAmountArsForLimitCore,
+  creditCardsCuentaCorriente as creditCardsCuentaCorrienteCore,
+  creditCardsForTotals as creditCardsForTotalsCore,
+  getAllCardsMonthLoad as getAllCardsMonthLoadCore,
+  getCardMonthLoad as getCardMonthLoadCore,
+  getCuentaCorrienteMonthLoad as getCuentaCorrienteMonthLoadCore,
+  isCuentaCorrienteCard as isCuentaCorrienteCardCore,
+  nameLooksLikeCcMara as nameLooksLikeCcMaraCore,
+  nameLooksLikeCuentaCorriente as nameLooksLikeCuentaCorrienteCore,
+  resolveFxRate,
+  statementMonthKeyForPurchase as statementMonthKeyForPurchaseCore,
+  toArsCents as toArsCentsCore,
+  wouldExceedCardLimit as wouldExceedCardLimitCore,
+} from "./cards-core.js";
+import {
+  plannedAppliesToMonth as plannedAppliesToMonthCore,
+  plannedStatusForMonth as plannedStatusForMonthCore,
+} from "./planned-core.js";
+import { createCardsUi } from "./cards-ui.js";
+import { createPlannedUi } from "./planned-ui.js";
+import { createProjectionUi } from "./projection-ui.js";
+import { createHomeUi } from "./home-ui.js";
+import { createMovementsUi } from "./movements-ui.js";
+import {
   driveConfirmPulled,
   driveConnect,
   driveDisconnect,
@@ -42,7 +71,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.13";
+const APP_VERSION = "3.9.9.14";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -302,6 +331,8 @@ const dom = {
   driveAutoSyncToggle: document.querySelector("#driveAutoSyncToggle"),
   driveConnectBtn: document.querySelector("#driveConnectBtn"),
   driveSyncNowBtn: document.querySelector("#driveSyncNowBtn"),
+  drivePushBtn: document.querySelector("#drivePushBtn"),
+  drivePullBtn: document.querySelector("#drivePullBtn"),
   driveDisconnectBtn: document.querySelector("#driveDisconnectBtn"),
   movementDialog: document.querySelector("#movementDialog"),
   movementForm: document.querySelector("#movementForm"),
@@ -456,10 +487,7 @@ function normalizeFx(input) {
 }
 
 function effectiveUsdArs(fx = state.fx) {
-  if (fx.useManual && Number.isFinite(fx.manualUsdArs) && fx.manualUsdArs > 0) return fx.manualUsdArs;
-  if (Number.isFinite(fx.apiUsdArs) && fx.apiUsdArs > 0) return fx.apiUsdArs;
-  if (Number.isFinite(fx.usdArs) && fx.usdArs > 0) return fx.usdArs;
-  return 1000;
+  return resolveFxRate(fx);
 }
 
 function isValidIsoDate(value) {
@@ -506,37 +534,23 @@ function daysUntilIsoDate(isoDate, fromDate = new Date()) {
 
 /** Heurística de nombre: CC / cuenta corriente (ej. “CC Mara”, “Cta cte”). */
 function nameLooksLikeCuentaCorriente(name) {
-  const n = String(name || "")
-    .toLocaleLowerCase("es")
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim();
-  if (!n) return false;
-  return (
-    n.includes("cc mara")
-    || n.includes("cuenta corriente")
-    || n.includes("cta cte")
-    || n.includes("cuenta cte")
-    || /\bcc\b/.test(n)
-    || n.startsWith("cc ")
-    || n.includes(" cc ")
-  );
+  return nameLooksLikeCuentaCorrienteCore(name);
 }
 
 function nameLooksLikeCcMara(name) {
-  return nameLooksLikeCuentaCorriente(name);
+  return nameLooksLikeCcMaraCore(name);
 }
 
 function isCuentaCorrienteCard(card) {
-  return Boolean(card?.excludeFromCardTotals);
+  return isCuentaCorrienteCardCore(card);
 }
 
 function creditCardsForTotals() {
-  return (state.creditCards || []).filter((card) => !isCuentaCorrienteCard(card));
+  return creditCardsForTotalsCore(state.creditCards);
 }
 
 function creditCardsCuentaCorriente() {
-  return (state.creditCards || []).filter((card) => isCuentaCorrienteCard(card));
+  return creditCardsCuentaCorrienteCore(state.creditCards);
 }
 
 function normalizeCreditCard(card) {
@@ -575,136 +589,56 @@ function normalizeCreditCard(card) {
  * Compra el día del cierre o antes → ese mes; después del cierre → mes siguiente.
  */
 function statementMonthKeyForPurchase(card, refDate = new Date()) {
-  const closeDay = isValidIsoDate(card?.closingDate)
-    ? Number(card.closingDate.slice(8, 10))
-    : Math.trunc(Number(card?.closingDay) || 0);
-  if (closeDay < 1 || closeDay > 31) return formatMonthKey(refDate);
-  const day = refDate.getDate();
-  if (day <= closeDay) return formatMonthKey(refDate);
-  return formatMonthKey(new Date(refDate.getFullYear(), refDate.getMonth() + 1, 1));
+  return statementMonthKeyForPurchaseCore(card, refDate);
 }
 
 function chargeAmountArsForLimit(charge) {
-  if (!charge) return 0;
-  if (charge.chargeType === "fixed") {
-    return charge.currency === "USD"
-      ? toArsCents(charge.monthlyAmountCents, "USD")
-      : charge.monthlyAmountCents;
-  }
-  if (charge.chargeType === "purchase") {
-    return charge.currency === "USD"
-      ? toArsCents(charge.totalAmountCents, "USD")
-      : charge.totalAmountCents;
-  }
-  // installment: cuota del mes activo
-  const amount = cardNextCuotaCents(charge);
-  return charge.currency === "USD" ? toArsCents(amount, "USD") : amount;
+  return chargeAmountArsForLimitCore(charge, state.fx);
 }
 
 function wouldExceedCardLimit(cardId, extraArsCents, monthKey = state.activeMonth) {
-  const card = state.creditCards.find((item) => item.id === cardId);
-  if (!card || !(card.limitCents > 0)) return null;
-  const load = getCardMonthLoad(cardId, monthKey);
-  const nextTotal = load.totalArs + Math.max(0, extraArsCents);
-  if (nextTotal <= card.limitCents) return null;
-  return {
-    card,
-    limitCents: card.limitCents,
-    currentArs: load.totalArs,
-    nextTotal,
-    overBy: nextTotal - card.limitCents,
-  };
+  return wouldExceedCardLimitCore({
+    creditCards: state.creditCards,
+    cardCharges: state.cardCharges,
+    cardId,
+    extraArsCents,
+    monthKey,
+    activeMonth: state.activeMonth,
+    fx: state.fx,
+  });
 }
 
 /** Carga de una tarjeta en un mes (≈ ARS), desglosada. No toca KPIs del hogar. */
 function getCardMonthLoad(cardId, monthKey = state.activeMonth) {
-  const charges = state.cardCharges.filter((charge) => charge.active && charge.cardId === cardId);
-  let installmentArs = 0;
-  let installmentUsd = 0;
-  let fixedArs = 0;
-  let fixedUsd = 0;
-  let purchaseArs = 0;
-  let purchaseUsd = 0;
-  const items = [];
-
-  charges.forEach((charge) => {
-    if (charge.chargeType === "fixed") {
-      const amount = charge.monthlyAmountCents;
-      if (charge.currency === "USD") fixedUsd += amount;
-      else fixedArs += amount;
-      items.push({ charge, kind: "fixed", amountCents: amount });
-      return;
-    }
-    if (charge.chargeType === "purchase") {
-      if (charge.monthKey !== monthKey) return;
-      const amount = charge.totalAmountCents;
-      if (charge.currency === "USD") purchaseUsd += amount;
-      else purchaseArs += amount;
-      items.push({ charge, kind: "purchase", amountCents: amount });
-      return;
-    }
-    // installment: next cuota maps to active month; for arbitrary monthKey, offset from activeMonth
-    const remaining = cardRemainingInstallments(charge);
-    if (remaining <= 0) return;
-    const monthOffset = monthDiff(state.activeMonth, monthKey);
-    if (monthOffset < 0 || monthOffset >= remaining) return;
-    const installmentIndex = charge.paidInstallments + monthOffset;
-    const amount = cardCuotaCents(charge, installmentIndex);
-    if (charge.currency === "USD") installmentUsd += amount;
-    else installmentArs += amount;
-    items.push({
-      charge,
-      kind: "installment",
-      amountCents: amount,
-      installmentIndex: installmentIndex + 1,
-    });
+  return getCardMonthLoadCore({
+    cardId,
+    charges: state.cardCharges,
+    monthKey,
+    activeMonth: state.activeMonth,
+    fx: state.fx,
   });
-
-  const totalArs =
-    installmentArs + fixedArs + purchaseArs +
-    toArsCents(installmentUsd, "USD") + toArsCents(fixedUsd, "USD") + toArsCents(purchaseUsd, "USD");
-  return {
-    installmentArs: installmentArs + toArsCents(installmentUsd, "USD"),
-    fixedArs: fixedArs + toArsCents(fixedUsd, "USD"),
-    purchaseArs: purchaseArs + toArsCents(purchaseUsd, "USD"),
-    totalArs,
-    items,
-  };
 }
 
 function getAllCardsMonthLoad(monthKey = state.activeMonth, { includeExcluded = false } = {}) {
-  let installmentArs = 0;
-  let fixedArs = 0;
-  let purchaseArs = 0;
-  const source = includeExcluded ? (state.creditCards || []) : creditCardsForTotals();
-  const byCard = source.map((card) => {
-    const load = getCardMonthLoad(card.id, monthKey);
-    installmentArs += load.installmentArs;
-    fixedArs += load.fixedArs;
-    purchaseArs += load.purchaseArs;
-    return { card, ...load };
-  }).filter((row) => row.totalArs > 0)
-    .sort((a, b) => b.totalArs - a.totalArs);
-  return {
-    installmentArs,
-    fixedArs,
-    purchaseArs,
-    totalArs: installmentArs + fixedArs + purchaseArs,
-    byCard,
-  };
+  return getAllCardsMonthLoadCore({
+    creditCards: state.creditCards,
+    cardCharges: state.cardCharges,
+    monthKey,
+    activeMonth: state.activeMonth,
+    fx: state.fx,
+    includeExcluded,
+  });
 }
 
 function getCuentaCorrienteMonthLoad(monthKey = state.activeMonth) {
-  let totalArs = 0;
-  const byCard = creditCardsCuentaCorriente().map((card) => {
-    const load = getCardMonthLoad(card.id, monthKey);
-    totalArs += load.totalArs;
-    return { card, ...load };
-  }).sort((a, b) => b.totalArs - a.totalArs || a.card.name.localeCompare(b.card.name, "es"));
-  return { totalArs, byCard };
+  return getCuentaCorrienteMonthLoadCore({
+    creditCards: state.creditCards,
+    cardCharges: state.cardCharges,
+    monthKey,
+    activeMonth: state.activeMonth,
+    fx: state.fx,
+  });
 }
-
-let selectedCardId = "";
 
 function normalizeCardCharge(charge, cardIds) {
   const id = sanitizeText(charge?.id, createId());
@@ -779,36 +713,23 @@ function normalizeCardCharge(charge, cardIds) {
 }
 
 function cardCuotaCents(charge, installmentIndex) {
-  return installmentAmountCents(
-    { amountCents: charge.totalAmountCents, schedule: { installments: charge.installments } },
-    installmentIndex,
-  );
+  return cardCuotaCentsCore(charge, installmentIndex);
 }
 
 function cardRemainingInstallments(charge) {
-  if (charge.chargeType !== "installment") return 0;
-  return Math.max(0, charge.installments - charge.paidInstallments);
+  return cardRemainingInstallmentsCore(charge);
 }
 
 function cardRemainingCents(charge) {
-  if (charge.chargeType === "fixed") return charge.active ? charge.monthlyAmountCents : 0;
-  let total = 0;
-  for (let index = charge.paidInstallments; index < charge.installments; index += 1) {
-    total += cardCuotaCents(charge, index);
-  }
-  return total;
+  return cardRemainingCentsCore(charge);
 }
 
 function cardNextCuotaCents(charge) {
-  if (charge.chargeType === "fixed") return charge.active ? charge.monthlyAmountCents : 0;
-  if (charge.paidInstallments >= charge.installments) return 0;
-  return cardCuotaCents(charge, charge.paidInstallments);
+  return cardNextCuotaCentsCore(charge);
 }
 
 function toArsCents(amountCents, currency, fx = state.fx) {
-  if (currency === "ARS") return amountCents;
-  const rate = effectiveUsdArs(fx);
-  return Math.round(amountCents * rate);
+  return toArsCentsCore(amountCents, currency, fx);
 }
 
 /**
@@ -818,85 +739,12 @@ function toArsCents(amountCents, currency, fx = state.fx) {
  * - Compras (purchase): un solo mes (monthKey del gasto).
  */
 function buildCardProjection(monthCount = 6, fromMonth = state.activeMonth) {
-  const horizon = Math.min(Math.max(Math.trunc(Number(monthCount)) || 6, 1), 36);
-  const excludedCardIds = new Set(
-    creditCardsCuentaCorriente().map((card) => card.id),
-  );
-  const activeCharges = state.cardCharges.filter(
-    (charge) => charge.active && !excludedCardIds.has(charge.cardId),
-  );
-  return Array.from({ length: horizon }, (_, monthOffset) => {
-    const monthKey = addMonths(fromMonth, monthOffset);
-    let installmentArs = 0;
-    let installmentUsd = 0;
-    let fixedArs = 0;
-    let fixedUsd = 0;
-    let purchaseArs = 0;
-    let purchaseUsd = 0;
-    const items = [];
-
-    activeCharges.forEach((charge) => {
-      if (charge.chargeType === "fixed") {
-        const amount = charge.monthlyAmountCents;
-        if (charge.currency === "USD") fixedUsd += amount;
-        else fixedArs += amount;
-        items.push({
-          chargeId: charge.id,
-          cardId: charge.cardId,
-          name: charge.name,
-          kind: "fixed",
-          currency: charge.currency,
-          amountCents: amount,
-        });
-        return;
-      }
-      if (charge.chargeType === "purchase") {
-        if (charge.monthKey !== monthKey) return;
-        const amount = charge.totalAmountCents;
-        if (charge.currency === "USD") purchaseUsd += amount;
-        else purchaseArs += amount;
-        items.push({
-          chargeId: charge.id,
-          cardId: charge.cardId,
-          name: charge.name,
-          kind: "purchase",
-          currency: charge.currency,
-          amountCents: amount,
-        });
-        return;
-      }
-      const remaining = cardRemainingInstallments(charge);
-      if (remaining <= 0 || monthOffset >= remaining) return;
-      const installmentIndex = charge.paidInstallments + monthOffset;
-      const amount = cardCuotaCents(charge, installmentIndex);
-      if (charge.currency === "USD") installmentUsd += amount;
-      else installmentArs += amount;
-      items.push({
-        chargeId: charge.id,
-        cardId: charge.cardId,
-        name: charge.name,
-        kind: "installment",
-        currency: charge.currency,
-        amountCents: amount,
-        installmentIndex: installmentIndex + 1,
-        installments: charge.installments,
-      });
-    });
-
-    const totalArsEquivalent =
-      installmentArs + fixedArs + purchaseArs +
-      toArsCents(installmentUsd, "USD") + toArsCents(fixedUsd, "USD") + toArsCents(purchaseUsd, "USD");
-    return {
-      monthKey,
-      installmentArs,
-      installmentUsd,
-      fixedArs,
-      fixedUsd,
-      purchaseArs,
-      purchaseUsd,
-      totalArsEquivalent,
-      items,
-    };
+  return calculateCardProjection({
+    creditCards: state.creditCards,
+    cardCharges: state.cardCharges,
+    monthCount,
+    fromMonth,
+    fx: state.fx,
   });
 }
 
@@ -1153,17 +1001,11 @@ function normalizePlannedItem(raw) {
 }
 
 function plannedAppliesToMonth(item, monthKey) {
-  if (!item || !isValidMonthKey(monthKey)) return false;
-  if (item.recurrence === "once") return item.monthKey === monthKey;
-  if (monthDiff(item.monthKey, monthKey) < 0) return false;
-  if (item.endMonth && monthDiff(monthKey, item.endMonth) < 0) return false;
-  return true;
+  return plannedAppliesToMonthCore(item, monthKey);
 }
 
 function plannedStatusForMonth(item, monthKey) {
-  if (item.fulfilledMonths?.includes(monthKey)) return "fulfilled";
-  if (item.dismissedMonths?.includes(monthKey)) return "dismissed";
-  return "open";
+  return plannedStatusForMonthCore(item, monthKey);
 }
 
 function normalizeTransaction(transaction) {
@@ -1520,7 +1362,11 @@ function describeDriveSync(status) {
     lines.push("Todavía no hubo una sync completa en esta PC");
   }
 
-  lines.push(status.autoSync ? "Sync automática: ON" : "Sync automática: OFF (solo al tocar «Sincronizar ahora»)");
+  lines.push(
+    status.autoSync
+      ? "Subida automática: ON (solo Guardar en segundo plano · nunca baja sola)"
+      : "Subida automática: OFF · usá «Guardar en Drive» o «Cargar de Drive»",
+  );
 
   if (status.message && !/OK/i.test(status.message) && !status.message.includes("conectado")) {
     lines.push(status.message);
@@ -1658,7 +1504,15 @@ function renderDriveStatus(status = driveStatus) {
     dom.driveConnectBtn.textContent = status?.connected ? "Reconectar Google" : "Conectar Google";
   }
   if (dom.driveSyncNowBtn) {
-    dom.driveSyncNowBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
+    // Legacy id (si quedara en HTML viejo): deshabilitado; ya no se usa el flujo mixto.
+    dom.driveSyncNowBtn.disabled = true;
+    dom.driveSyncNowBtn.hidden = true;
+  }
+  if (dom.drivePushBtn) {
+    dom.drivePushBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
+  }
+  if (dom.drivePullBtn) {
+    dom.drivePullBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
   }
   if (dom.driveDisconnectBtn) {
     dom.driveDisconnectBtn.disabled = !status?.connected || driveBusy || isSandboxProfile();
@@ -1722,6 +1576,11 @@ async function applyDriveContent(content, remoteModifiedTime, { silent = false }
   await refreshDriveStatus();
 }
 
+/**
+ * Cargar de Drive (solo bajar). Nunca sube.
+ * interactive: pide confirmación antes de pisar local.
+ * silent: solo aplica si no hay cambios locales pendientes (nunca pisa a ciegas).
+ */
 async function runDrivePull({ force = false, interactive = false } = {}) {
   if (isSandboxProfile()) {
     if (interactive) showToast("Drive solo opera en el perfil Hogar");
@@ -1738,59 +1597,71 @@ async function runDrivePull({ force = false, interactive = false } = {}) {
     if (result.action === "download" && result.content) {
       if (interactive) {
         const ok = await confirmAction({
-          title: "Aplicar copia de Google Drive",
+          title: "Cargar de Drive",
           copy:
-            "Drive tiene una copia más nueva. Si seguís, los datos de esta PC se reemplazan "
-            + "(antes se guarda un respaldo «antes-de-drive»).",
+            "Se va a reemplazar lo de esta PC con la copia de Google Drive. "
+            + "Antes se guarda un respaldo «antes-de-drive» en Descargas.",
           details: summarizeBackup(parseBackup(JSON.parse(result.content))),
-          confirmLabel: "Usar copia de Drive",
+          confirmLabel: "Cargar y aplicar",
+          danger: true,
         });
         if (!ok) {
           renderDriveStatus(result.status);
+          showToast("No se cargó · esta PC no se tocó");
           return;
         }
+      } else if (status.localDirty) {
+        // Auto/silencioso: no pisar si esta PC tiene cambios sin subir.
+        renderDriveStatus(result.status);
+        return;
       }
       await applyDriveContent(result.content, result.remoteModifiedTime, { silent: !interactive });
-      if (interactive) showToast("Copia de Drive aplicada (respaldo local guardado)");
+      if (interactive) showToast("Cargado de Drive (respaldo local en Descargas)");
       else showToast("Se actualizó desde Google Drive");
       return;
     }
     if (result.action === "conflict" && result.content) {
+      if (!interactive) {
+        // Silencioso: no resolver conflictos solo.
+        renderDriveStatus(result.status);
+        return;
+      }
       const useRemote = await confirmAction({
-        title: "Conflicto: esta PC ≠ Drive",
+        title: "Cargar de Drive (conflicto)",
         copy:
-          "Hay cambios distintos en esta PC y en Google Drive. "
-          + "«Usar Drive» reemplaza lo local (con respaldo previo). "
-          + "Cancelar mantiene esta PC; después podés subir con «Sincronizar ahora».",
+          "Esta PC y Drive tienen copias distintas. "
+          + "«Cargar» reemplaza lo local con Drive (respaldo previo). "
+          + "Cancelar deja esta PC; si querés subir, usá «Guardar en Drive».",
         details: summarizeBackup(parseBackup(JSON.parse(result.content))),
-        confirmLabel: "Usar Drive",
+        confirmLabel: "Cargar Drive acá",
+        danger: true,
       });
       if (useRemote) {
         await applyDriveContent(result.content, result.remoteModifiedTime);
-        showToast("Se aplicó la copia de Drive (respaldo local guardado)");
+        showToast("Cargado de Drive (respaldo local en Descargas)");
       } else {
         renderDriveStatus(result.status);
-        showToast("Se mantuvieron los datos de esta PC · podés subir con «Sincronizar ahora»");
+        showToast("Se mantuvo esta PC · para subir usá «Guardar en Drive»");
       }
       return;
     }
     if (result.action === "local_ahead" && interactive) {
-      showToast("Esta PC está adelantada: subiendo cambios a Drive…");
-      await runDrivePush({ force: false, interactive: true });
+      showToast("Esta PC está adelantada respecto de Drive · usá «Guardar en Drive» si querés subir");
+      renderDriveStatus(result.status);
       return;
     }
     if (interactive && result.action === "empty") {
-      showToast("Drive vacío: se sube la copia de esta PC");
-      await runDrivePush({ force: true, interactive: true });
+      showToast("Drive está vacío · usá «Guardar en Drive» desde la PC que tiene los datos");
+      renderDriveStatus(result.status);
       return;
     }
     if (interactive && result.action === "noop") {
-      showToast("Al día: esta PC y Drive tienen la misma copia");
+      showToast("Ya tenés la misma copia que Drive");
     }
     renderDriveStatus(result.status);
   } catch (error) {
     console.warn("Drive pull falló.", error);
-    if (interactive) showToast(String(error?.message || error || "No se pudo bajar de Drive"));
+    if (interactive) showToast(String(error?.message || error || "No se pudo cargar de Drive"));
   } finally {
     driveBusy = false;
     await refreshDriveStatus();
@@ -1821,12 +1692,13 @@ async function runDrivePush({ force = false, interactive = false } = {}) {
     if (result.action === "conflict") {
       if (interactive) {
         const overwrite = await confirmAction({
-          title: "Conflicto al subir a Drive",
+          title: "Guardar en Drive (conflicto)",
           copy:
-            "Drive tiene otra versión que no coincide con esta PC. "
-            + "Si pisás, se pierde lo que haya solo en Drive (salvo que lo hayas bajado antes).",
+            "Drive tiene otra versión distinta a esta PC. "
+            + "Si guardás igual, se pisa lo que haya solo en Drive. "
+            + "Si no estás seguro: cancelá, usá «Cargar de Drive» o exportá un backup local.",
           details: [
-            "Si no estás seguro: cancelá, tocá «Sincronizar ahora» y elegí «Usar Drive», o exportá un backup local.",
+            "En una PC vacía no uses Guardar: primero Cargar desde la PC que tiene los datos.",
           ],
           confirmLabel: "Pisar Drive con esta PC",
           danger: true,
@@ -1834,16 +1706,16 @@ async function runDrivePush({ force = false, interactive = false } = {}) {
         if (overwrite) {
           const forced = await drivePush(content, true);
           driveStatus = forced.status;
-          showToast("Esta PC se subió y pisó la copia de Drive");
+          showToast("Guardado · esta PC pisó la copia de Drive");
         } else {
-          showToast("No se subió · Drive no se tocó");
+          showToast("No se guardó · Drive no se tocó");
         }
       }
       renderDriveStatus(driveStatus);
       return;
     }
     if (interactive) {
-      if (result.action === "uploaded") showToast("Subido a Google Drive · al día");
+      if (result.action === "uploaded") showToast("Guardado en Google Drive");
       else if (result.action === "noop") showToast("Drive ya tenía esta misma copia");
     }
     renderDriveStatus(result.status);
@@ -1904,9 +1776,10 @@ async function handleDriveConnect() {
     showToast("Se abre el navegador para autorizar Google…");
     const status = await driveConnect();
     renderDriveStatus(status);
-    showToast(status.message || "Google conectado");
-    await runDrivePull({ force: false, interactive: true });
-    await runDrivePush({ force: false, interactive: true });
+    showToast(
+      (status.message || "Google conectado")
+      + " · ahora elegí «Cargar de Drive» o «Guardar en Drive» (no se hace solo)",
+    );
   } catch (error) {
     showToast(String(error?.message || error || "No se pudo conectar Google"));
   } finally {
@@ -1932,9 +1805,38 @@ async function handleDriveDisconnect() {
   }
 }
 
-async function handleDriveSyncNow() {
-  await runDrivePull({ force: false, interactive: true });
+/** Solo subir esta PC → Drive. */
+async function handleDrivePushNow() {
+  if (isSandboxProfile()) {
+    showToast("Drive solo opera en el perfil Hogar");
+    return;
+  }
+  const txCount = (state.transactions || []).length;
+  const cardCount = (state.creditCards || []).length;
+  const emptyLocal = txCount === 0 && cardCount === 0;
+  const ok = await confirmAction({
+    title: emptyLocal ? "¿Guardar una PC casi vacía en Drive?" : "Guardar en Drive",
+    copy: emptyLocal
+      ? "Esta PC no tiene movimientos ni tarjetas. Si guardás, podés pisar en Drive una copia llena de la otra PC. "
+        + "En PC nueva o vacía usá «Cargar de Drive», no Guardar."
+      : "Se va a subir la copia de ESTA PC a Google Drive. "
+        + "Si Drive tiene otra versión y hay conflicto, te vamos a preguntar antes de pisar. "
+        + "En una PC vacía no uses esto: usá «Cargar de Drive».",
+    details: summarizeBackup(state),
+    confirmLabel: emptyLocal ? "Igual subir vacío" : "Guardar en Drive",
+    danger: emptyLocal,
+  });
+  if (!ok) return;
   await runDrivePush({ force: false, interactive: true });
+}
+
+/** Solo bajar Drive → esta PC. */
+async function handleDrivePullNow() {
+  if (isSandboxProfile()) {
+    showToast("Drive solo opera en el perfil Hogar");
+    return;
+  }
+  await runDrivePull({ force: false, interactive: true });
 }
 
 function wireDriveUi() {
@@ -1944,8 +1846,15 @@ function wireDriveUi() {
   dom.driveConnectBtn?.addEventListener("click", () => {
     void handleDriveConnect();
   });
+  dom.drivePushBtn?.addEventListener("click", () => {
+    void handleDrivePushNow();
+  });
+  dom.drivePullBtn?.addEventListener("click", () => {
+    void handleDrivePullNow();
+  });
+  // Legacy: si quedara el botón viejo, no hace el pull+push mixto.
   dom.driveSyncNowBtn?.addEventListener("click", () => {
-    void handleDriveSyncNow();
+    showToast("Usá «Guardar en Drive» o «Cargar de Drive» por separado");
   });
   dom.driveDisconnectBtn?.addEventListener("click", () => {
     void handleDriveDisconnect();
@@ -1955,9 +1864,10 @@ function wireDriveUi() {
       try {
         const status = await driveSetAutoSync(Boolean(dom.driveAutoSyncToggle.checked));
         renderDriveStatus(status);
+        // Solo programa subida; nunca carga automática.
         if (status.autoSync && status.connected) scheduleDrivePush();
       } catch (error) {
-        showToast(String(error?.message || error || "No se pudo cambiar auto-sync"));
+        showToast(String(error?.message || error || "No se pudo cambiar la subida automática"));
         await refreshDriveStatus();
       }
     })();
@@ -2267,879 +2177,80 @@ function emptyState(title, copy, addAction = false) {
   return wrapper;
 }
 
-function renderDashboard() {
-  const totals = getMonthTotals(state.activeMonth);
-  const isClosed = Boolean(state.closedMonths[state.activeMonth]);
-  dom.dashboardTitle.textContent = formatMonthLabel(state.activeMonth);
-  dom.dashboardSubtitle.textContent = totals.occurrences.length
-    ? `${totals.occurrences.length} movimiento${totals.occurrences.length === 1 ? "" : "s"} en este mes.`
-    : "Todav\u00eda no hay movimientos para este mes.";
 
-  const health = !totals.occurrences.length
-    ? { label: "Sin datos todavía", tone: "neutral" }
-    : totals.balanceCents >= 0
-      ? { label: "Mes en equilibrio", tone: "positive" }
-      : { label: "Revisar gastos", tone: "negative" };
-  dom.monthHealth.textContent = isClosed ? "Mes cerrado" : health.label;
-  dom.monthHealth.dataset.tone = health.tone;
-  dom.monthCloseBtn.textContent = isClosed ? "Reabrir mes" : "Cerrar mes";
-  dom.monthCloseBtn.classList.toggle("danger-btn", isClosed);
+// --- Home / listas (módulo) ---
+const homeUi = createHomeUi({
+  getState: () => state,
+  setState: (next) => { state = next; },
+  get dom() { return dom; },
+  element,
+  emptyState,
+  formatCurrency,
+  formatMonthLabel,
+  formatIsoDateLabel,
+  isValidIsoDate,
+  isMonthClosed,
+  clampDateToMonth,
+  normalizeTransaction,
+  materializeOccurrence,
+  occurrenceForMonth,
+  localDateKey,
+  cloneState,
+  saveState,
+  render: (...args) => render(...args),
+  showToast,
+  confirmAction,
+  requireOpenMonth,
+  switchView: (...args) => switchView(...args),
+  openMovementDialog: (...args) => openMovementDialog(...args),
+  fillSelectOptions,
+  setSelectValue,
+  sanitizeText,
+  createId,
+  getMonthTotals,
+  toggleOccurrenceStatus: (...args) => toggleOccurrenceStatus(...args),
+  dueStateForOccurrence,
+  installmentProgress,
+});
+const {
+  renderDashboard,
+  renderPersonBreakdown,
+  renderDueSoon,
+  renderBudgetProgress,
+  renderSettingsCategories,
+  renderCategoryBreakdown,
+  renderMiniForecast,
+  renderMovementCollection,
+  renderMovements,
+} = homeUi;
 
-  dom.summaryGrid.replaceChildren();
-  const cards = [
-    ["Ingresos", formatCurrency(totals.totalIncomeCents), `${totals.incomes.length} fuente${totals.incomes.length === 1 ? "" : "s"}`, "income"],
-    ["Gastos", formatCurrency(totals.totalExpenseCents), `${totals.expenses.length} movimiento${totals.expenses.length === 1 ? "" : "s"}`, "expense"],
-    // Saldo al momento: solo lo cobrado menos lo pagado (tildes), no el plan completo del mes.
-    ["Disponible", formatCurrency(totals.actualBalanceCents), totals.actualBalanceCents >= 0 ? "Cobrado menos pagado (ahora)" : "Vas gastando más de lo cobrado", totals.actualBalanceCents >= 0 ? "balance" : "danger"],
-    ["Pendiente de pagar", formatCurrency(totals.pendingExpenseCents), `${formatCurrency(totals.paidExpenseCents)} ya pagado`, "pending"],
-  ];
-  cards.forEach(([label, value, copy, tone]) => {
-    const card = element("article", "summary-card");
-    card.dataset.tone = tone;
-    card.append(element("p", "summary-label", label), element("strong", "summary-value", value), element("span", "summary-copy", copy));
-    dom.summaryGrid.append(card);
-  });
+// --- Proyección UI (módulo) ---
+const projectionUiModule = createProjectionUi({
+  getState: () => state,
+  setState: (next) => {
+    state = next;
+  },
+  get dom() {
+    return dom;
+  },
+  element,
+  emptyState,
+  formatCurrency,
+  formatMonthLabel,
+  buildProjection,
+  switchView: (...args) => switchView(...args),
+  render: (...args) => render(...args),
+});
 
-  dom.actualSummary.replaceChildren();
-  const pendingCount = totals.occurrences.filter((item) => item.status === "pending").length;
-  const actualCards = [
-    ["Cobrado", formatCurrency(totals.receivedIncomeCents), `${formatCurrency(totals.pendingIncomeCents)} por cobrar`, "income"],
-    ["Pagado", formatCurrency(totals.paidExpenseCents), `${formatCurrency(totals.pendingExpenseCents)} por pagar`, "expense"],
-    ["Flujo realizado", formatCurrency(totals.actualBalanceCents), "Cobrado menos pagado", totals.actualBalanceCents >= 0 ? "balance" : "danger"],
-    ["Por resolver", `${pendingCount} pendiente${pendingCount === 1 ? "" : "s"}`, "Movimientos todavía abiertos", "pending"],
-  ];
-  actualCards.forEach(([label, value, copy, tone]) => {
-    const item = element("div", "actual-stat");
-    item.dataset.tone = tone;
-    item.append(element("span", "", label), element("strong", "", value), element("small", "", copy));
-    dom.actualSummary.append(item);
-  });
-
-  const percentage = Math.round(totals.commitmentRate * 100);
-  dom.commitmentRate.textContent = totals.totalIncomeCents ? `${percentage}%` : "-";
-  dom.cashFlowVisual.replaceChildren();
-  const track = element("div", "flow-track");
-  track.setAttribute("role", "progressbar");
-  track.setAttribute("aria-label", "Porcentaje de ingresos comprometido en gastos");
-  track.setAttribute("aria-valuemin", "0");
-  track.setAttribute("aria-valuemax", "100");
-  track.setAttribute("aria-valuenow", String(Math.min(percentage, 100)));
-  const fill = element("span", "flow-fill");
-  fill.setAttribute("aria-hidden", "true");
-  fill.style.width = `${Math.min(percentage, 100)}%`;
-  if (percentage > 85) fill.dataset.alert = "true";
-  track.append(fill);
-  const labels = element("div", "flow-labels");
-  const planBalance = totals.balanceCents;
-  const balanceLabel = planBalance >= 0
-    ? `${formatCurrency(planBalance)} si se cumple todo`
-    : `${formatCurrency(Math.abs(planBalance))} faltante del plan`;
-  labels.append(element("span", "", `${formatCurrency(totals.totalExpenseCents)} del mes`), element("strong", "", balanceLabel));
-  dom.cashFlowVisual.append(track, labels);
-
-  renderCategoryBreakdown(totals.expenses);
-  renderPersonBreakdown(totals);
-  renderDueSoon(totals);
-  // Últimos cargados del mes (por createdAt), sin tilde de pago en el home.
-  const recentThisMonth = [...totals.occurrences]
-    .sort((a, b) => {
-      const ta = state.transactions.find((tx) => tx.id === a.id)?.createdAt
-        || state.occurrences[a.statusKey]?.effectiveDate
-        || "";
-      const tb = state.transactions.find((tx) => tx.id === b.id)?.createdAt
-        || state.occurrences[b.statusKey]?.effectiveDate
-        || "";
-      if (ta !== tb) return String(tb).localeCompare(String(ta));
-      return String(b.name || "").localeCompare(String(a.name || ""), "es");
-    })
-    .slice(0, 6);
-  renderMovementCollection(dom.dashboardMovements, recentThisMonth, {
-    compact: true,
-    hideStatusToggle: true,
-  });
-  renderMiniForecast();
-  renderBudgetProgress(totals);
-}
-
-/** Totales del mes agrupados por persona (para el home). */
-function personTotalsFromOccurrences(occurrences) {
-  const map = new Map();
-  (occurrences || []).forEach((item) => {
-    const person = sanitizeText(item.person, "Compartido") || "Compartido";
-    if (!map.has(person)) {
-      map.set(person, {
-        person,
-        incomeCents: 0,
-        expenseCents: 0,
-        receivedCents: 0,
-        paidCents: 0,
-        count: 0,
-      });
-    }
-    const row = map.get(person);
-    row.count += 1;
-    if (item.kind === "income") {
-      row.incomeCents += item.amountThisMonthCents;
-      if (item.status === "paid") row.receivedCents += item.amountThisMonthCents;
-    } else {
-      row.expenseCents += item.amountThisMonthCents;
-      if (item.status === "paid") row.paidCents += item.amountThisMonthCents;
-    }
-  });
-  return [...map.values()].sort((a, b) => {
-    const aTotal = a.incomeCents + a.expenseCents;
-    const bTotal = b.incomeCents + b.expenseCents;
-    return bTotal - aTotal || a.person.localeCompare(b.person, "es");
-  });
-}
-
-function renderPersonBreakdown(totals) {
-  if (!dom.personBreakdown || !dom.personBreakdownPanel) return;
-  const rows = personTotalsFromOccurrences(totals?.occurrences);
-  if (!rows.length) {
-    dom.personBreakdownPanel.hidden = true;
-    dom.personBreakdown.replaceChildren();
-    return;
-  }
-  dom.personBreakdownPanel.hidden = false;
-  dom.personBreakdown.replaceChildren();
-  rows.forEach((row) => {
-    const card = element("article", "person-breakdown-card");
-    const plan = row.incomeCents - row.expenseCents;
-    const actual = row.receivedCents - row.paidCents;
-    card.append(
-      element("strong", "person-breakdown-name", row.person),
-      element(
-        "p",
-        "person-breakdown-meta",
-        `${row.count} mov. · plan ${formatCurrency(plan)} · real ${formatCurrency(actual)}`,
-      ),
-    );
-    const grid = element("div", "person-breakdown-grid");
-    [
-      ["Ingresos", formatCurrency(row.incomeCents), "income"],
-      ["Gastos", formatCurrency(row.expenseCents), "expense"],
-      ["Cobrado", formatCurrency(row.receivedCents), "income"],
-      ["Pagado", formatCurrency(row.paidCents), "expense"],
-    ].forEach(([label, value, tone]) => {
-      const cell = element("div", "person-breakdown-stat");
-      cell.dataset.tone = tone;
-      cell.append(element("span", "", label), element("strong", "", value));
-      grid.append(cell);
-    });
-    card.append(grid);
-    dom.personBreakdown.append(card);
-  });
-}
-
-function renderDueSoon(totals) {
-  if (!dom.dueSoonPanel || !dom.dueSoonList) return;
-  const dueItems = (totals?.occurrences || [])
-    .filter((item) => item.status === "pending")
-    .map((item) => ({ item, due: dueStateForOccurrence(item) }))
-    .filter(({ due }) => due === "overdue" || due === "today" || due === "upcoming")
-    .sort((a, b) => {
-      const order = { overdue: 0, today: 1, upcoming: 2 };
-      if (order[a.due] !== order[b.due]) return order[a.due] - order[b.due];
-      return (a.item.dueDay || 32) - (b.item.dueDay || 32)
-        || a.item.name.localeCompare(b.item.name, "es");
-    })
-    .slice(0, 6);
-  if (!dueItems.length) {
-    dom.dueSoonPanel.hidden = true;
-    dom.dueSoonList.replaceChildren();
-    return;
-  }
-  dom.dueSoonPanel.hidden = false;
-  dom.dueSoonList.replaceChildren();
-  dueItems.forEach(({ item, due }) => {
-    const row = element("button", "due-soon-row");
-    row.type = "button";
-    row.dataset.due = due;
-    const label = due === "overdue" ? "Vencido" : due === "today" ? "Hoy" : "Próximo";
-    row.append(
-      element("strong", "", item.name),
-      element("span", "", `${label}${item.dueDay ? ` · día ${item.dueDay}` : ""} · ${item.kind === "income" ? "Cobrar" : "Pagar"}`),
-      element("span", "", formatCurrency(item.amountThisMonthCents)),
-    );
-    row.addEventListener("click", () => openMovementDialog(item.id, item.monthKey));
-    dom.dueSoonList.append(row);
-  });
-}
-
-function renderBudgetProgress(totals) {
-  const previous = getMonthTotals(addMonths(state.activeMonth, -1));
-  const expenseDiff = totals.totalExpenseCents - previous.totalExpenseCents;
-  const incomeDiff = totals.totalIncomeCents - previous.totalIncomeCents;
-  if (!previous.totalExpenseCents && !previous.totalIncomeCents) {
-    dom.monthComparison.textContent = "Sin mes anterior para comparar";
-  } else {
-    const parts = [];
-    if (previous.totalExpenseCents || totals.totalExpenseCents) {
-      parts.push(
-        `Gastos ${expenseDiff <= 0 ? "↓" : "↑"} ${formatCurrency(Math.abs(expenseDiff))}`,
-      );
-    }
-    if (previous.totalIncomeCents || totals.totalIncomeCents) {
-      parts.push(
-        `Ingresos ${incomeDiff >= 0 ? "↑" : "↓"} ${formatCurrency(Math.abs(incomeDiff))}`,
-      );
-    }
-    dom.monthComparison.textContent = `${parts.join(" · ")} vs ${formatMonthLabel(addMonths(state.activeMonth, -1), true)}`;
-  }
-  dom.budgetProgress.replaceChildren();
-  const budgets = state.budgets.filter((budget) => budget.monthKey === state.activeMonth);
-  if (!budgets.length) {
-    dom.budgetProgress.append(emptyState(
-      "Sin presupuestos para este mes",
-      "Podés definir límites por categoría desde Ajustes.",
-    ));
-    return;
-  }
-  budgets.forEach((budget) => {
-    const spent = totals.expenses
-      .filter((item) => item.category.localeCompare(budget.category, "es", { sensitivity: "base" }) === 0)
-      .reduce((sum, item) => sum + item.amountThisMonthCents, 0);
-    const percentage = Math.round((spent / budget.amountCents) * 100);
-    const row = element("div", "budget-row");
-    if (percentage > 100) row.dataset.tone = "negative";
-    const head = element("div", "category-head");
-    head.append(
-      element("span", "", budget.category),
-      element("strong", "", `${formatCurrency(spent)} / ${formatCurrency(budget.amountCents)}`),
-    );
-    const track = element("div", "category-track");
-    const fill = element("span", "category-fill");
-    fill.style.width = `${Math.min(percentage, 100)}%`;
-    track.append(fill);
-    row.append(head, track, element("small", "", `${percentage}% utilizado`));
-    dom.budgetProgress.append(row);
-  });
-}
-
-/** Chips de categorías en Ajustes: preview + Ver todas (evita lista eterna). */
-function renderSettingsCategories() {
-  if (!dom.categoriesList) return;
-  dom.categoriesList.replaceChildren();
-  const all = [...(state.categories || [])].sort((a, b) => a.localeCompare(b, "es"));
-  if (!all.length) {
-    settingsCategoriesExpanded = false;
-    dom.categoriesList.append(
-      element("p", "backup-history-empty", "Sin categorías todavía. Agregá una arriba."),
-    );
-    return;
-  }
-  const hasMore = all.length > SETTINGS_CATEGORIES_PREVIEW;
-  const visible = settingsCategoriesExpanded || !hasMore
-    ? all
-    : all.slice(0, SETTINGS_CATEGORIES_PREVIEW);
-  visible.forEach((category) => {
-    const chip = element("span", "person-chip");
-    chip.append(element("span", "", category));
-    const remove = element("button", "", "×");
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Eliminar categoría ${category}`);
-    remove.addEventListener("click", () => removeCategory(category));
-    chip.append(remove);
-    dom.categoriesList.append(chip);
-  });
-  if (hasMore) {
-    const toggle = element(
-      "button",
-      "text-btn category-breakdown-toggle settings-categories-toggle",
-      settingsCategoriesExpanded
-        ? "Ver menos"
-        : `Ver todas (${all.length})`,
-    );
-    toggle.type = "button";
-    toggle.setAttribute("aria-expanded", settingsCategoriesExpanded ? "true" : "false");
-    toggle.addEventListener("click", () => {
-      settingsCategoriesExpanded = !settingsCategoriesExpanded;
-      renderSettingsCategories();
-    });
-    // Fuera del flex wrap de chips: fila completa debajo.
-    const wrap = element("div", "settings-categories-toggle-wrap");
-    wrap.append(toggle);
-    if (!settingsCategoriesExpanded) {
-      wrap.append(
-        element(
-          "small",
-          "settings-categories-hint",
-          ` · mostrando ${SETTINGS_CATEGORIES_PREVIEW} de ${all.length}`,
-        ),
-      );
-    }
-    dom.categoriesList.append(wrap);
-  }
-}
-
-function renderCategoryBreakdown(expenses) {
-  dom.categoryBreakdown.replaceChildren();
-  if (!expenses.length) {
-    categoryBreakdownExpanded = false;
-    dom.categoryBreakdown.append(emptyState("Sin gastos todav\u00eda", "Cuando carguen uno, ac\u00e1 ver\u00e1n c\u00f3mo se distribuye."));
-    return;
-  }
-  const categories = new Map();
-  expenses.forEach((item) => categories.set(item.category, (categories.get(item.category) || 0) + item.amountThisMonthCents));
-  const sorted = [...categories.entries()].sort((a, b) => b[1] - a[1]);
-  const previewLimit = 5;
-  const hasMore = sorted.length > previewLimit;
-  const visible = categoryBreakdownExpanded || !hasMore
-    ? sorted
-    : sorted.slice(0, previewLimit);
-  const max = sorted[0][1];
-  visible.forEach(([category, amount]) => {
-    const row = element("div", "category-row");
-    const head = element("div", "category-head");
-    head.append(element("span", "", category), element("strong", "", formatCurrency(amount)));
-    const bar = element("div", "category-track");
-    const categoryFill = element("span", "category-fill");
-    categoryFill.setAttribute("aria-hidden", "true");
-    categoryFill.style.width = `${(amount / max) * 100}%`;
-    bar.append(categoryFill);
-    row.append(head, bar);
-    dom.categoryBreakdown.append(row);
-  });
-  if (hasMore) {
-    const toggle = element(
-      "button",
-      "text-btn category-breakdown-toggle",
-      categoryBreakdownExpanded
-        ? "Ver menos"
-        : `Ver todas (${sorted.length})`,
-    );
-    toggle.type = "button";
-    toggle.setAttribute(
-      "aria-expanded",
-      categoryBreakdownExpanded ? "true" : "false",
-    );
-    toggle.addEventListener("click", () => {
-      categoryBreakdownExpanded = !categoryBreakdownExpanded;
-      renderCategoryBreakdown(expenses);
-    });
-    dom.categoryBreakdown.append(toggle);
-  }
-}
-
-function renderMiniForecast() {
-  dom.miniForecast.replaceChildren();
-  buildProjection(4).forEach((month, index) => {
-    const card = element("button", "forecast-card");
-    card.type = "button";
-    if (month.balanceCents < 0) card.dataset.tone = "negative";
-    if (index === 0) card.classList.add("is-current");
-    card.append(
-      element("span", "forecast-month", formatMonthLabel(month.monthKey, true)),
-      element("strong", "", formatCurrency(month.balanceCents, true)),
-      element("small", "", month.balanceCents >= 0 ? "queda" : "faltar\u00eda"),
-    );
-    card.addEventListener("click", () => {
-      state.activeMonth = month.monthKey;
-      switchView("projection");
-      render();
-    });
-    dom.miniForecast.append(card);
-  });
-}
-
-function scheduleLabel(item) {
-  if (item.schedule.type === "installment") {
-    const progress = installmentProgress(item);
-    return progress
-      ? `Cuota ${item.installmentIndex} de ${item.schedule.installments} · resta ${formatCurrency(progress.remainingCents)}`
-      : `Cuota ${item.installmentIndex} de ${item.schedule.installments}`;
-  }
-  if (item.schedule.type === "monthly") {
-    return item.schedule.endMonth ? `Mensual hasta ${formatMonthLabel(item.schedule.endMonth, true)}` : "Todos los meses";
-  }
-  return "Una sola vez";
-}
-
-function renderMovementCollection(container, occurrences, options = false) {
-  // Compat: tercer arg boolean = compact (legado).
-  const opts = typeof options === "boolean"
-    ? { compact: options, hideStatusToggle: false }
-    : { compact: false, hideStatusToggle: false, ...options };
-  const { compact, hideStatusToggle } = opts;
-  container.replaceChildren();
-  if (!occurrences.length) {
-    container.append(emptyState(
-      "Nada por ac\u00e1",
-      "Agreg\u00e1 un ingreso o gasto para empezar.",
-      compact ? false : true,
-    ));
-    return;
-  }
-
-  occurrences.forEach((item) => {
-    const row = element("article", `movement-row${compact ? " is-compact" : ""}`);
-    row.dataset.kind = item.kind;
-    if (hideStatusToggle) row.classList.add("no-status-toggle");
-
-    let statusButton = null;
-    if (!hideStatusToggle) {
-      statusButton = element("button", `status-check${item.status === "paid" ? " is-paid" : ""}`);
-      statusButton.type = "button";
-      const completeLabel = item.kind === "income" ? "Marcar como cobrado" : "Marcar como pagado";
-      const reopenLabel = item.kind === "income"
-        ? "Marcar ingreso como pendiente"
-        : "Marcar gasto como pendiente";
-      statusButton.setAttribute("aria-label", item.status === "paid" ? reopenLabel : completeLabel);
-      statusButton.textContent = item.status === "paid" ? "\u2713" : "";
-      statusButton.disabled = Boolean(state.closedMonths[item.monthKey]);
-      statusButton.addEventListener("click", () => toggleOccurrenceStatus(item));
-    }
-
-    const body = element("div", "movement-body");
-    const titleLine = element("div", "movement-title-line");
-    titleLine.append(element("strong", "movement-name", item.name), element("span", "kind-badge", item.kind === "income" ? "Ingreso" : "Gasto"));
-    const dueState = dueStateForOccurrence(item);
-    const dueLabels = {
-      overdue: "Vencido",
-      today: "Vence hoy",
-      upcoming: "Próximo a vencer",
-      scheduled: item.dueDay ? `Vence el día ${item.dueDay}` : "",
-      none: "",
-    };
-    const meta = element("p", "movement-meta", [
-      item.category,
-      item.person,
-      scheduleLabel(item),
-      dueLabels[dueState],
-    ].filter(Boolean).join(" · "));
-    if (["overdue", "today", "upcoming"].includes(dueState)) meta.dataset.due = dueState;
-    if (item.note && !compact) meta.append(document.createTextNode(` \u00b7 ${item.note}`));
-    body.append(titleLine, meta);
-
-    const amount = element("div", "movement-amount");
-    amount.append(
-      element("strong", "", `${item.kind === "income" ? "+" : "-"}${formatCurrency(item.amountThisMonthCents)}`),
-      element("small", "", item.status === "paid"
-        ? (item.kind === "income" ? "Cobrado" : "Pagado")
-        : "Pendiente"),
-    );
-
-    const editButton = element("button", "row-menu", "Editar");
-    editButton.type = "button";
-    editButton.setAttribute("aria-label", `Editar ${item.name}`);
-    editButton.disabled = Boolean(state.closedMonths[item.monthKey]);
-    editButton.addEventListener("click", () => openMovementDialog(item.id, item.monthKey));
-    if (statusButton) row.append(statusButton, body, amount, editButton);
-    else row.append(body, amount, editButton);
-    container.append(row);
-  });
-}
-
-function renderMovements() {
-  const totals = getMonthTotals(state.activeMonth);
-  const search = dom.movementSearch.value.trim().toLocaleLowerCase("es");
-  const type = dom.movementTypeFilter.value;
-  const status = dom.movementStatusFilter.value;
-  const filtered = totals.occurrences.filter((item) => {
-    const haystack = `${item.name} ${item.category} ${item.person} ${item.note}`.toLocaleLowerCase("es");
-    return (!search || haystack.includes(search)) &&
-      (type === "all" || item.kind === type) && (status === "all" || item.status === status);
-  });
-
-  dom.movementTotals.replaceChildren();
-  [
-    ["Ingresos", totals.totalIncomeCents, "income"],
-    ["Gastos", totals.totalExpenseCents, "expense"],
-    ["Balance", totals.balanceCents, totals.balanceCents >= 0 ? "balance" : "danger"],
-  ].forEach(([label, value, tone]) => {
-    const item = element("div", "list-total");
-    item.dataset.tone = tone;
-    item.append(element("span", "", label), element("strong", "", formatCurrency(value)));
-    dom.movementTotals.append(item);
-  });
-  renderMovementCollection(dom.movementList, filtered);
-}
-
-const EXPENSE_CHART_COLORS = [
-  "#D4A574", "#E08A7A", "#8FBF9A", "#C48972", "#A78BFA",
-  "#E0B86A", "#7EB8C9", "#D4A0C0", "#8FB4A8", "#F0B4A8",
-  "#B8A0D4", "#C9B48A",
-];
-
-/** UI local de Proyección (no se persiste). */
-const projectionUi = {
-  selectedMonthKey: null,
-  selectedCategory: null,
-  expenseFilter: "all", // all | monthly | installment | one-time
-  includeCards: false,
-  incomeCutPercent: 0,
-};
-
-/** Carga estimada de plásticos (sin CC) para un mes de proyección. */
-function projectionCardsLoadCents(monthKey) {
-  return getAllCardsMonthLoad(monthKey, { includeExcluded: false }).totalArs || 0;
-}
-
-/** Ingreso del mes con recorte de escenario (“¿y si baja el sueldo?”). */
-function projectionIncomeCents(month, cutPercent = projectionUi.incomeCutPercent) {
-  const base = month?.totalIncomeCents || 0;
-  const cut = Math.min(90, Math.max(0, Number(cutPercent) || 0));
-  if (!cut) return base;
-  return Math.round(base * (1 - cut / 100));
-}
-
-function scheduleTypeLabel(type) {
-  if (type === "monthly") return "Mensual";
-  if (type === "installment") return "Cuotas";
-  return "Una vez";
-}
-
-function filterExpensesForProjection(expenses, filter = projectionUi.expenseFilter) {
-  return (expenses || []).filter((item) => {
-    if (item.kind && item.kind !== "expense") return false;
-    if (filter === "all") return true;
-    return item.schedule?.type === filter;
-  });
-}
-
-function categoryTotalsFromExpenses(expenses) {
-  const map = new Map();
-  expenses.forEach((item) => {
-    const key = item.category || "Sin categoría";
-    map.set(key, (map.get(key) || 0) + item.amountThisMonthCents);
-  });
-  return [...map.entries()]
-    .map(([category, cents]) => ({ category, cents }))
-    .sort((a, b) => b.cents - a.cents || a.category.localeCompare(b.category, "es"));
-}
-
-function selectProjectionMonth(monthKey, { rerender = true } = {}) {
-  projectionUi.selectedMonthKey = monthKey;
-  projectionUi.selectedCategory = null;
-  if (rerender) renderProjection();
-}
-
-function selectProjectionCategory(category) {
-  projectionUi.selectedCategory =
-    projectionUi.selectedCategory === category ? null : category;
-  renderProjection();
-}
-
-function setProjectionExpenseFilter(filter) {
-  projectionUi.expenseFilter = filter;
-  projectionUi.selectedCategory = null;
-  renderProjection();
-}
-
-function renderProjection() {
-  const projection = buildProjection();
-  if (!projection.length) {
-    dom.projectionSummary?.replaceChildren();
-    dom.projectionChart?.replaceChildren();
-    dom.projectionList?.replaceChildren();
-    if (dom.projectionBreakdown) {
-      dom.projectionBreakdown.replaceChildren(
-        emptyState("Sin datos", "Cargá movimientos para ver la proyección."),
-      );
-    }
-    if (dom.projectionBreakdownDetail) {
-      dom.projectionBreakdownDetail.hidden = true;
-      dom.projectionBreakdownDetail.replaceChildren();
-    }
-    return;
-  }
-
-  const monthKeys = projection.map((month) => month.monthKey);
-  if (!monthKeys.includes(projectionUi.selectedMonthKey)) {
-    projectionUi.selectedMonthKey = monthKeys.includes(state.activeMonth)
-      ? state.activeMonth
-      : monthKeys[0];
-  }
-  const selectedMonth = projection.find((month) => month.monthKey === projectionUi.selectedMonthKey)
-    || projection[0];
-
-  const cut = projectionUi.incomeCutPercent;
-  const withCards = projectionUi.includeCards;
-  const enriched = projection.map((month) => {
-    const incomeCents = projectionIncomeCents(month, cut);
-    const cardsCents = withCards ? projectionCardsLoadCents(month.monthKey) : 0;
-    const homeExpenseCents = month.totalExpenseCents;
-    const expenseCents = homeExpenseCents + cardsCents;
-    return {
-      ...month,
-      incomeCents,
-      homeExpenseCents,
-      cardsCents,
-      expenseCents,
-      netCents: incomeCents - expenseCents,
-    };
-  });
-  const selectedEnriched = enriched.find((month) => month.monthKey === selectedMonth.monthKey)
-    || enriched[0];
-
-  const monthsWithExpense = enriched.filter((month) => month.expenseCents > 0);
-  const avgExpenseCents = monthsWithExpense.length
-    ? Math.round(
-      monthsWithExpense.reduce((sum, month) => sum + month.expenseCents, 0)
-      / monthsWithExpense.length,
-    )
-    : 0;
-  const monthsWithoutIncome = enriched.filter((month) => month.incomeCents <= 0).length;
-  const selectedExpenses = filterExpensesForProjection(selectedMonth.expenses);
-  const selectedExpenseTotal = selectedExpenses.reduce((sum, item) => sum + item.amountThisMonthCents, 0)
-    + (selectedEnriched?.cardsCents || 0);
-  const categoryCount = categoryTotalsFromExpenses(selectedExpenses).length;
-
-  if (dom.projectionIncludeCards) dom.projectionIncludeCards.checked = withCards;
-  if (dom.projectionIncomeCut) dom.projectionIncomeCut.value = String(cut || 0);
-
-  dom.projectionSummary.replaceChildren();
-  [
-    [
-      "Gasto del mes",
-      formatCurrency(selectedExpenseTotal),
-      [
-        formatMonthLabel(selectedMonth.monthKey),
-        withCards && selectedEnriched?.cardsCents
-          ? `hogar ${formatCurrency(selectedEnriched.homeExpenseCents)} + tarjetas ${formatCurrency(selectedEnriched.cardsCents)}`
-          : null,
-      ].filter(Boolean).join(" · "),
-      selectedEnriched.expenseCents > selectedEnriched.incomeCents && selectedEnriched.incomeCents > 0
-        ? "negative"
-        : "",
-    ],
-    [
-      "Ingreso del mes",
-      formatCurrency(selectedEnriched.incomeCents),
-      cut ? `Escenario −${cut}% sobre lo cargado` : "Sin recorte de escenario",
-      "",
-    ],
-    [
-      "Promedio gasto / mes",
-      formatCurrency(avgExpenseCents),
-      monthsWithExpense.length
-        ? `En ${monthsWithExpense.length} mes${monthsWithExpense.length === 1 ? "" : "es"} con gasto`
-        : "Sin gastos en el horizonte",
-      "",
-    ],
-    [
-      cut || withCards ? "Balance escenario" : "Sin ingreso cargado",
-      cut || withCards
-        ? formatCurrency(selectedEnriched.netCents)
-        : String(monthsWithoutIncome),
-      cut || withCards
-        ? (selectedEnriched.netCents >= 0 ? "Ingreso − gasto (con escenario)" : "Queda en rojo en este corte")
-        : (monthsWithoutIncome
-          ? "Meses del horizonte sin sueldo/ingreso"
-          : "Todos los meses tienen ingreso"),
-      (cut || withCards)
-        ? (selectedEnriched.netCents < 0 ? "negative" : "")
-        : (monthsWithoutIncome ? "negative" : ""),
-    ],
-  ].forEach(([label, value, copy, tone]) => {
-    const card = element("article", "projection-stat");
-    if (tone) card.dataset.tone = tone;
-    card.append(element("span", "", label), element("strong", "", value), element("small", "", copy));
-    dom.projectionSummary.append(card);
-  });
-
-  // --- Chart: income vs expense per month (clickable) ---
-  const maxValue = Math.max(
-    1,
-    ...enriched.flatMap((month) => [month.incomeCents, month.expenseCents]),
-  );
-  dom.projectionChart.replaceChildren();
-  dom.projectionChart.setAttribute("role", "list");
-  dom.projectionChart.setAttribute(
-    "aria-label",
-    "Ingresos y gastos por mes. Hacé clic en un mes para ver el desglose de gastos.",
-  );
-  enriched.forEach((month) => {
-    const group = element("button", "chart-month");
-    group.type = "button";
-    group.setAttribute("role", "listitem");
-    if (month.monthKey === selectedMonth.monthKey) group.dataset.active = "true";
-    group.setAttribute(
-      "aria-label",
-      `${formatMonthLabel(month.monthKey)}: ingresos ${formatCurrency(month.incomeCents)}, gastos ${formatCurrency(month.expenseCents)}`,
-    );
-    const cardBit = month.cardsCents
-      ? `\nTarjetas est. ${formatCurrency(month.cardsCents)}`
-      : "";
-    group.title = `${formatMonthLabel(month.monthKey)}\n+ ${formatCurrency(month.incomeCents)}\n− ${formatCurrency(month.expenseCents)}${cardBit}\nClic para desglosar`;
-    const bars = element("div", "chart-bars");
-    const incomeBar = element("span", "chart-bar income-bar");
-    const expenseBar = element("span", "chart-bar expense-bar");
-    incomeBar.style.height = `${Math.max((month.incomeCents / maxValue) * 100, month.incomeCents ? 3 : 0)}%`;
-    expenseBar.style.height = `${Math.max((month.expenseCents / maxValue) * 100, month.expenseCents ? 3 : 0)}%`;
-    bars.append(incomeBar, expenseBar);
-    group.append(bars, element("small", "", formatMonthLabel(month.monthKey, true)));
-    group.addEventListener("click", () => selectProjectionMonth(month.monthKey));
-    dom.projectionChart.append(group);
-  });
-
-  // --- Filters ---
-  if (dom.projectionExpenseFilters) {
-    dom.projectionExpenseFilters.replaceChildren();
-    [
-      ["all", "Todos"],
-      ["monthly", "Mensuales"],
-      ["installment", "Cuotas"],
-      ["one-time", "Una vez"],
-    ].forEach(([value, label]) => {
-      const chip = element("button", "proj-filter-chip", label);
-      chip.type = "button";
-      if (projectionUi.expenseFilter === value) chip.dataset.active = "true";
-      chip.addEventListener("click", () => setProjectionExpenseFilter(value));
-      dom.projectionExpenseFilters.append(chip);
-    });
-  }
-
-  if (dom.projectionBreakdownTitle) {
-    dom.projectionBreakdownTitle.textContent =
-      `Gastos · ${formatMonthLabel(selectedMonth.monthKey)}`
-      + (withCards ? " (+ tarjetas est.)" : "")
-      + (cut ? ` · ingreso −${cut}%` : "");
-  }
-
-  // --- Category bars ---
-  const categories = categoryTotalsFromExpenses(selectedExpenses);
-  if (withCards && selectedEnriched?.cardsCents > 0) {
-    categories.push({
-      category: "Tarjetas (estimado plásticos)",
-      cents: selectedEnriched.cardsCents,
-      isCards: true,
-    });
-    categories.sort((a, b) => b.cents - a.cents || a.category.localeCompare(b.category, "es"));
-  }
-  const maxCat = Math.max(1, ...categories.map((item) => item.cents));
-  if (dom.projectionBreakdown) {
-    dom.projectionBreakdown.replaceChildren();
-    if (!categories.length) {
-      dom.projectionBreakdown.append(
-        emptyState(
-          "Sin gastos en este corte",
-          "Probá otro mes (clic en el gráfico) u otro filtro de tipo.",
-        ),
-      );
-    } else {
-      categories.forEach((row, index) => {
-        const color = row.isCards
-          ? "#d4a574"
-          : EXPENSE_CHART_COLORS[index % EXPENSE_CHART_COLORS.length];
-        const pct = Math.round((row.cents / selectedExpenseTotal) * 100) || 0;
-        const barRow = element("button", "expense-bar-row");
-        barRow.type = "button";
-        if (projectionUi.selectedCategory === row.category) barRow.dataset.active = "true";
-        barRow.setAttribute(
-          "aria-label",
-          `${row.category}: ${formatCurrency(row.cents)}, ${pct} por ciento`,
-        );
-        const label = element("div", "expense-bar-label");
-        const swatch = element("span", "expense-swatch");
-        swatch.style.background = color;
-        label.append(swatch, element("span", "", row.category));
-        const track = element("div", "expense-bar-track");
-        const fill = element("span", "expense-bar-fill");
-        fill.style.width = `${Math.max((row.cents / maxCat) * 100, row.cents ? 2 : 0)}%`;
-        fill.style.background = color;
-        track.append(fill);
-        const meta = element("div", "expense-bar-meta");
-        meta.append(
-          element("strong", "", formatCurrency(row.cents)),
-          element("small", "", `${pct}%`),
-        );
-        barRow.append(label, track, meta);
-        if (!row.isCards) {
-          barRow.addEventListener("click", () => selectProjectionCategory(row.category));
-        } else {
-          barRow.disabled = true;
-          barRow.title = "Carga de plásticos (sin cuentas corrientes). No es un resumen generado en Movimientos.";
-        }
-        dom.projectionBreakdown.append(barRow);
-      });
-    }
-  }
-
-  // --- Detail of selected category ---
-  if (dom.projectionBreakdownDetail) {
-    if (!projectionUi.selectedCategory) {
-      dom.projectionBreakdownDetail.hidden = true;
-      dom.projectionBreakdownDetail.replaceChildren();
-    } else {
-      const items = selectedExpenses
-        .filter((item) => (item.category || "Sin categoría") === projectionUi.selectedCategory)
-        .sort((a, b) => b.amountThisMonthCents - a.amountThisMonthCents
-          || a.name.localeCompare(b.name, "es"));
-      dom.projectionBreakdownDetail.hidden = false;
-      dom.projectionBreakdownDetail.replaceChildren();
-      const head = element("div", "breakdown-detail-head");
-      head.append(
-        element("strong", "", projectionUi.selectedCategory),
-        element(
-          "span",
-          "",
-          `${items.length} movimiento${items.length === 1 ? "" : "s"} · ${formatCurrency(
-            items.reduce((sum, item) => sum + item.amountThisMonthCents, 0),
-          )}`,
-        ),
-      );
-      const list = element("div", "breakdown-detail-list");
-      items.forEach((item) => {
-        const line = element("div", "breakdown-detail-row");
-        const left = element("div", "");
-        left.append(
-          element("strong", "", item.name),
-          element(
-            "small",
-            "",
-            [item.person, scheduleTypeLabel(item.schedule?.type)].filter(Boolean).join(" · "),
-          ),
-        );
-        line.append(left, element("strong", "expense-text", formatCurrency(item.amountThisMonthCents)));
-        list.append(line);
-      });
-      const openMonth = element("button", "text-btn", "Abrir este mes en Movimientos →");
-      openMonth.type = "button";
-      openMonth.addEventListener("click", () => {
-        state.activeMonth = selectedMonth.monthKey;
-        switchView("movements");
-        render();
-      });
-      dom.projectionBreakdownDetail.append(head, list, openMonth);
-    }
-  }
-
-  // --- Month list ---
-  dom.projectionList.replaceChildren();
-  projection.forEach((month) => {
-    const row = element("button", "projection-row");
-    row.type = "button";
-    if (month.monthKey === selectedMonth.monthKey) row.dataset.active = "true";
-    if (month.totalExpenseCents > 0 && month.totalIncomeCents <= 0) row.dataset.tone = "negative";
-    const main = element("div", "projection-row-main");
-    const incomeNote = month.totalIncomeCents > 0
-      ? `${month.occurrences.length} movimiento${month.occurrences.length === 1 ? "" : "s"}`
-      : "Sin ingreso cargado";
-    main.append(element("strong", "", formatMonthLabel(month.monthKey)), element("span", "", incomeNote));
-    const figures = element("div", "projection-figures");
-    figures.append(
-      element("span", "income-text", `+ ${formatCurrency(month.totalIncomeCents)}`),
-      element("span", "expense-text", `- ${formatCurrency(month.totalExpenseCents)}`),
-    );
-    const balance = month.totalIncomeCents - month.totalExpenseCents;
-    const result = element("div", "projection-result");
-    result.append(
-      element("strong", "", formatCurrency(balance)),
-      element("small", "", "Ingresos − gastos"),
-    );
-    if (balance < 0) result.dataset.tone = "negative";
-    row.append(main, figures, result);
-    row.addEventListener("click", () => selectProjectionMonth(month.monthKey));
-    row.addEventListener("dblclick", () => {
-      state.activeMonth = month.monthKey;
-      switchView("movements");
-      render();
-    });
-    dom.projectionList.append(row);
-  });
-}
+const {
+  renderProjection,
+  selectProjectionMonth,
+  selectProjectionCategory,
+  setProjectionExpenseFilter,
+  scheduleTypeLabel,
+  setIncludeCards: setProjectionIncludeCards,
+  setIncomeCutPercent: setProjectionIncomeCutPercent,
+} = projectionUiModule;
 
 function renderProfileChrome() {
   const sandbox = isSandboxProfile();
@@ -3756,1666 +2867,116 @@ function renderFormSelects() {
   }
 }
 
-function renderCardsFxBar() {
-  const rate = effectiveUsdArs();
-  state.fx.usdArs = rate;
-  if (dom.fxRateInput) {
-    const displayRate = state.fx.useManual && state.fx.manualUsdArs
-      ? state.fx.manualUsdArs
-      : (state.fx.apiUsdArs || state.fx.usdArs);
-    if (document.activeElement !== dom.fxRateInput) {
-      dom.fxRateInput.value = Number.isFinite(displayRate) ? String(displayRate) : "";
-    }
-  }
-  if (dom.fxUseManual) dom.fxUseManual.checked = Boolean(state.fx.useManual);
-  if (dom.fxStatus) {
-    const parts = [];
-    if (state.fx.apiUsdArs) {
-      parts.push(`API ${state.fx.apiLabel || "dólar"}: $ ${formatFxRate(state.fx.apiUsdArs)}`);
-      if (state.fx.apiUpdatedAt) parts.push(`act. ${state.fx.apiUpdatedAt}`);
-    } else {
-      parts.push("Sin cotización de red todavía");
-    }
-    if (state.fx.useManual && state.fx.manualUsdArs) {
-      parts.push(`Usando manual: $ ${formatFxRate(state.fx.manualUsdArs)}`);
-    } else if (state.fx.apiUsdArs) {
-      parts.push("Usando cotización de red (estimativa)");
-    }
-    dom.fxStatus.textContent = parts.join(" · ");
-  }
-}
 
-function renderChargeRow(charge) {
-  const row = element("div", "cards-charge-row");
-  const body = element("div", "cards-charge-body");
-  const badge = charge.chargeType === "installment"
-    ? "Cuotas"
-    : charge.chargeType === "purchase"
-      ? "Compra"
-      : "Fijo";
-  const currencyLabel = charge.currency === "USD" ? "USD" : "ARS";
-  body.append(element("strong", "", charge.name));
-  if (charge.chargeType === "installment") {
-    const left = cardRemainingInstallments(charge);
-    const next = cardNextCuotaCents(charge);
-    const remaining = cardRemainingCents(charge);
-    body.append(element(
-      "p",
-      "cards-charge-meta",
-      `${badge} · ${charge.paidInstallments}/${charge.installments} pagadas · quedan ${left} · próxima ${formatMoneyAmount(next, currencyLabel)} · resto ${formatMoneyAmount(remaining, currencyLabel)}${charge.currency === "USD" ? ` (≈ ${formatMoneyAmount(toArsCents(remaining, "USD"), "ARS")})` : ""}`,
-    ));
-  } else if (charge.chargeType === "purchase") {
-    body.append(element(
-      "p",
-      "cards-charge-meta",
-      `${badge} · ${formatMonthLabel(charge.monthKey)} · ${formatMoneyAmount(charge.totalAmountCents, currencyLabel)}${charge.currency === "USD" ? ` (≈ ${formatMoneyAmount(toArsCents(charge.totalAmountCents, "USD"), "ARS")})` : ""} · un solo pago`,
-    ));
-  } else {
-    body.append(element(
-      "p",
-      "cards-charge-meta",
-      `${badge} mensual · ${formatMoneyAmount(charge.monthlyAmountCents, currencyLabel)}${charge.currency === "USD" ? ` (≈ ${formatMoneyAmount(toArsCents(charge.monthlyAmountCents, "USD"), "ARS")}/mes)` : ""}`,
-    ));
-  }
-  if (charge.note) body.append(element("p", "cards-charge-meta", charge.note));
-  const side = element("div", "cards-charge-side");
-  if (charge.chargeType === "installment" && cardRemainingInstallments(charge) > 0) {
-    const payOne = element("button", "secondary-btn", "Marcar 1 cuota");
-    payOne.type = "button";
-    payOne.addEventListener("click", () => markCardCuotaPaid(charge.id));
-    side.append(payOne);
-  }
-  if (charge.chargeType === "installment" && charge.paidInstallments > 0) {
-    const undo = element("button", "row-menu", "Deshacer cuota");
-    undo.type = "button";
-    undo.addEventListener("click", () => unmarkCardCuotaPaid(charge.id));
-    side.append(undo);
-  }
-  const remove = element("button", "row-menu", "Quitar");
-  remove.type = "button";
-  remove.addEventListener("click", () => removeCardCharge(charge.id));
-  side.append(remove);
-  row.append(body, side);
-  return row;
-}
+// --- Tarjetas UI (módulo) ---
+const cardsUi = createCardsUi({
+  getState: () => state,
+  setState: (next) => {
+    state = next;
+  },
+  get dom() {
+    return dom;
+  },
+  element,
+  emptyState,
+  formatMoneyAmount,
+  formatMonthLabel,
+  formatIsoDateLabel,
+  formatFxRate,
+  isValidIsoDate,
+  daysUntilIsoDate,
+  effectiveUsdArs,
+  normalizeCreditCard,
+  normalizeCardCharge,
+  normalizeTransaction,
+  materializeOccurrence,
+  occurrenceForMonth,
+  localDateKey,
+  cloneState,
+  saveState,
+  render: (...args) => render(...args),
+  showToast,
+  confirmAction,
+  requireOpenMonth,
+  switchView: (...args) => switchView(...args),
+  openMovementDialog: (...args) => openMovementDialog(...args),
+  fillSelectOptions,
+  setSelectValue,
+  sanitizeText,
+  createId,
+});
 
-function renderCardsListView() {
-  const monthLoad = getAllCardsMonthLoad(state.activeMonth);
-  const hero = element("article", "panel cards-hero");
-  const heroHead = element("div", "panel-heading");
-  heroHead.append(
-    element("p", "eyebrow", `Carga de ${formatMonthLabel(state.activeMonth)}`),
-    element("h2", "", "Este mes en tarjetas"),
-    element("p", "", "Cuotas que caen + fijos + compras del mes. Estimado en ARS (con TC). No es el resumen del banco."),
-  );
-  hero.append(heroHead);
-  const heroValue = element("div", "cards-hero-value");
-  heroValue.append(element("strong", "", formatMoneyAmount(monthLoad.totalArs, "ARS")));
-  hero.append(heroValue);
-  const chips = element("div", "cards-hero-chips");
-  const totalForPct = Math.max(1, monthLoad.totalArs);
-  [
-    ["Cuotas del mes", monthLoad.installmentArs, "Planes en cuotas que caen este mes"],
-    ["Fijos mensuales", monthLoad.fixedArs, "Cargos fijos que se repiten"],
-    ["Compras del mes", monthLoad.purchaseArs, "Gastos de un solo pago en este resumen"],
-  ].forEach(([label, cents, hint]) => {
-    const chip = element("div", "cards-hero-chip");
-    const pct = monthLoad.totalArs > 0 ? Math.round((cents / totalForPct) * 100) : 0;
-    chip.title = hint;
-    chip.append(
-      element("span", "", label),
-      element("strong", "", formatMoneyAmount(cents, "ARS")),
-      element("small", "", monthLoad.totalArs > 0 ? `${pct}% del total` : "—"),
-    );
-    chips.append(chip);
-  });
-  hero.append(chips);
-  hero.append(element(
-    "p",
-    "cards-charge-meta",
-    "Desglose solo de plásticos (sin cuentas corrientes). Cuotas = lo que cae este mes · Fijos = abonos · Compras = un pago del resumen.",
-  ));
+const {
+  renderCards,
+  renderCardsFxBar,
+  openCardDialog,
+  openPurchaseDialog,
+  openChargeDialog,
+  updateChargeAmountModeUI,
+  updateChargeAmountHint,
+  saveCreditCard,
+  saveCardCharge,
+  saveCardPurchase,
+  removeCreditCard,
+  removeCardCharge,
+  markCardCuotaPaid,
+  unmarkCardCuotaPaid,
+  generateCardStatement,
+  refreshUsdRate,
+  applyManualFx,
+} = cardsUi;
 
-  if (monthLoad.byCard.length) {
-    const rank = element("div", "cards-rank");
-    rank.append(element("p", "cards-rank-title", "Quién pesa más este mes"));
-    const max = Math.max(...monthLoad.byCard.map((row) => row.totalArs), 1);
-    monthLoad.byCard.forEach((row) => {
-      const barRow = element("button", "cards-rank-row");
-      barRow.type = "button";
-      const label = element("div", "cards-rank-label");
-      label.append(
-        element("strong", "", row.card.name),
-        element("span", "", formatMoneyAmount(row.totalArs, "ARS")),
-      );
-      const track = element("div", "cards-rank-track");
-      const fill = element("span", "cards-rank-fill");
-      fill.style.width = `${Math.min(100, Math.round((row.totalArs / max) * 100))}%`;
-      track.append(fill);
-      barRow.append(label, track);
-      barRow.addEventListener("click", () => {
-        selectedCardId = row.card.id;
-        renderCards();
-      });
-      rank.append(barRow);
-    });
-    hero.append(rank);
-  }
-  dom.cardsRoot.append(hero);
+// --- Previstos UI (módulo) ---
+const plannedUi = createPlannedUi({
+  getState: () => state,
+  setState: (next) => {
+    state = next;
+  },
+  get dom() {
+    return dom;
+  },
+  element,
+  emptyState,
+  formatCurrency,
+  formatIsoDateLabel,
+  isValidIsoDate,
+  isMonthClosed,
+  clampDateToMonth,
+  normalizeTransaction,
+  normalizePlannedItem,
+  materializeOccurrence,
+  occurrenceForMonth,
+  localDateKey,
+  cloneState,
+  saveState,
+  render: (...args) => render(...args),
+  showToast,
+  confirmAction,
+  requireOpenMonth,
+  switchView: (...args) => switchView(...args),
+  openMovementDialog: (...args) => openMovementDialog(...args),
+  fillSelectOptions,
+  setSelectValue,
+  sanitizeText,
+  createId,
+  loadFormPrefs: (...args) => loadFormPrefs(...args),
+  fromCents,
+  toCents,
+  closeMovementDialog: (...args) => closeMovementDialog(...args),
+  updateScheduleFields: (...args) => updateScheduleFields(...args),
+});
 
-  // Próximos cierres del ciclo (solo plásticos que suman a tarjetas)
-  const closings = creditCardsForTotals()
-    .filter((card) => isValidIsoDate(card.closingDate))
-    .map((card) => {
-      const daysUntil = daysUntilIsoDate(card.closingDate);
-      const load = getCardMonthLoad(card.id, state.activeMonth);
-      return { card, daysUntil, load };
-    })
-    .filter((row) => row.daysUntil !== null && row.daysUntil >= -3)
-    .sort((a, b) => a.daysUntil - b.daysUntil)
-    .slice(0, 6);
-  if (closings.length) {
-    const closePanel = element("article", "panel");
-    closePanel.append(
-      element("p", "eyebrow", "Ciclo"),
-      element("h2", "", "Próximos cierres de resumen"),
-    );
-    const list = element("div", "cards-closing-list");
-    closings.forEach(({ card, daysUntil, load }) => {
-      const row = element("button", "cards-closing-row");
-      row.type = "button";
-      const when = daysUntil < 0
-        ? `Cerró ${formatIsoDateLabel(card.closingDate)}`
-        : daysUntil === 0
-          ? `Cierra hoy · ${formatIsoDateLabel(card.closingDate)}`
-          : `En ${daysUntil} día${daysUntil === 1 ? "" : "s"} · ${formatIsoDateLabel(card.closingDate)}`;
-      const dueBit = isValidIsoDate(card.dueDate) ? ` · Vence ${formatIsoDateLabel(card.dueDate)}` : "";
-      row.append(
-        element("strong", "", card.name),
-        element("span", "", when + dueBit),
-        element("span", "", `Carga est. ${formatMoneyAmount(load.totalArs, "ARS")}`),
-      );
-      row.addEventListener("click", () => {
-        selectedCardId = card.id;
-        renderCards();
-      });
-      list.append(row);
-    });
-    closePanel.append(list);
-    dom.cardsRoot.append(closePanel);
-  }
-
-  // Tabla de tarjetas (excluye cuentas corrientes)
-  const plasticCards = creditCardsForTotals();
-  const tablePanel = element("article", "panel cards-table-panel");
-  tablePanel.append(
-    element("p", "eyebrow", "Tus plásticos"),
-    element("h2", "", "Tarjetas"),
-  );
-  if (!plasticCards.length) {
-    tablePanel.append(emptyState(
-      "Sin tarjetas todavía",
-      "Agregá una tarjeta para compras, cuotas y fijos del plástico.",
-    ));
-  } else {
-    const table = element("div", "cards-table");
-    const head = element("div", "cards-table-head");
-    ["Tarjeta", "Límite / uso del mes", "Cierre ciclo", "Vence ciclo", "Este mes", ""].forEach((label) => {
-      head.append(element("span", "", label));
-    });
-    table.append(head);
-    plasticCards.forEach((card) => {
-      const load = getCardMonthLoad(card.id, state.activeMonth);
-      const row = element("button", "cards-table-row");
-      row.type = "button";
-      const nameCell = element("div", "cards-table-name");
-      nameCell.append(element("strong", "", card.name), element("small", "", card.person || ""));
-      const limitCell = element("div", "cards-table-limit");
-      if (card.limitCents > 0) {
-        const pct = Math.min(999, Math.round((load.totalArs / card.limitCents) * 100));
-        const track = element("div", "cards-limit-track");
-        const fill = element("span", "cards-limit-fill");
-        fill.style.width = `${Math.min(100, pct)}%`;
-        if (pct >= 90) fill.dataset.alert = "true";
-        track.append(fill);
-        limitCell.append(
-          element("span", "", `${formatMoneyAmount(card.limitCents, "ARS")} · ${pct}%`),
-          track,
-        );
-      } else {
-        limitCell.append(element("span", "cards-muted", "Sin límite"));
-      }
-      row.append(
-        nameCell,
-        limitCell,
-        element("span", "", isValidIsoDate(card.closingDate) ? formatIsoDateLabel(card.closingDate) : "—"),
-        element("span", "", isValidIsoDate(card.dueDate) ? formatIsoDateLabel(card.dueDate) : "—"),
-        element("strong", "", formatMoneyAmount(load.totalArs, "ARS")),
-        element("span", "cards-table-open", "Abrir →"),
-      );
-      row.addEventListener("click", () => {
-        selectedCardId = card.id;
-        renderCards();
-      });
-      table.append(row);
-    });
-    tablePanel.append(table);
-  }
-  dom.cardsRoot.append(tablePanel);
-
-  // Cuentas corrientes (ej. CC Mara): detalle visible, no suman a “Este mes en tarjetas”.
-  const ccLoad = getCuentaCorrienteMonthLoad(state.activeMonth);
-  const ccPanel = element("article", "panel cards-cc-panel");
-  ccPanel.append(
-    element("p", "eyebrow", "Fuera del total de tarjetas"),
-    element("h2", "", "Cuentas corrientes"),
-    element(
-      "p",
-      "heading-copy",
-      "No suman al total de plásticos (ej. descuento de sueldo). Acá ves el detalle por separado.",
-    ),
-  );
-  if (!ccLoad.byCard.length && !creditCardsCuentaCorriente().length) {
-    ccPanel.append(element(
-      "p",
-      "cards-muted",
-      "Ninguna cuenta marcada. Editá la tarjeta y activá “Cuenta corriente (no sumar a tarjetas)”.",
-    ));
-  } else {
-    const totalLine = element("div", "cards-cc-total");
-    totalLine.append(
-      element("span", "", `Movimiento del mes · ${formatMonthLabel(state.activeMonth)}`),
-      element("strong", "", formatMoneyAmount(ccLoad.totalArs, "ARS")),
-    );
-    ccPanel.append(totalLine);
-    const list = element("div", "cards-cc-list");
-    creditCardsCuentaCorriente().forEach((card) => {
-      const load = getCardMonthLoad(card.id, state.activeMonth);
-      const row = element("button", "cards-cc-row");
-      row.type = "button";
-      row.append(
-        element("strong", "", card.name),
-        element("span", "", card.person || "—"),
-        element("span", "", formatMoneyAmount(load.totalArs, "ARS")),
-        element("span", "cards-table-open", "Ver →"),
-      );
-      row.addEventListener("click", () => {
-        selectedCardId = card.id;
-        renderCards();
-      });
-      list.append(row);
-    });
-    ccPanel.append(list);
-  }
-  dom.cardsRoot.append(ccPanel);
-}
-
-function renderCardDetailView(card) {
-  const load = getCardMonthLoad(card.id, state.activeMonth);
-  const charges = state.cardCharges.filter((charge) => charge.active && charge.cardId === card.id);
-  const remainingInstallments = charges
-    .filter((charge) => charge.chargeType === "installment")
-    .reduce((sum, charge) => sum + cardRemainingCents(charge), 0);
-
-  const head = element("article", "panel cards-detail-head");
-  const title = element("div", "");
-  title.append(
-    element("p", "eyebrow", isCuentaCorrienteCard(card) ? "Cuenta corriente" : (card.person || "Tarjeta")),
-    element("h2", "", card.name),
-  );
-  if (isCuentaCorrienteCard(card)) {
-    const notice = element("p", "cards-cc-notice");
-    notice.textContent =
-      "Cuenta corriente: no suma al total de “Este mes en tarjetas” ni a la proyección de plásticos.";
-    head.append(notice);
-  }
-  const meta = [
-    card.limitCents > 0 ? `Límite ${formatMoneyAmount(card.limitCents, "ARS")}` : "Sin límite",
-    isValidIsoDate(card.closingDate) ? `Cierre ${formatIsoDateLabel(card.closingDate)}` : "Cierre —",
-    isValidIsoDate(card.dueDate) ? `Vence ${formatIsoDateLabel(card.dueDate)}` : "Vence —",
-  ].join(" · ");
-  title.append(element("p", "cards-charge-meta", meta));
-  if (card.note) title.append(element("p", "", card.note));
-  const actions = element("div", "cards-card-actions");
-  const editBtn = element("button", "secondary-btn", "Editar / ciclo");
-  editBtn.type = "button";
-  editBtn.addEventListener("click", () => openCardDialog(card.id));
-  const purchaseBtn = element("button", "secondary-btn", "+ Compra");
-  purchaseBtn.type = "button";
-  purchaseBtn.addEventListener("click", () => openPurchaseDialog(card.id));
-  const instBtn = element("button", "secondary-btn", "+ Cuotas");
-  instBtn.type = "button";
-  instBtn.addEventListener("click", () => openChargeDialog(card.id, "installment"));
-  const fixedBtn = element("button", "secondary-btn", "+ Fijo");
-  fixedBtn.type = "button";
-  fixedBtn.addEventListener("click", () => openChargeDialog(card.id, "fixed"));
-  const deleteBtn = element("button", "danger-btn", "Eliminar");
-  deleteBtn.type = "button";
-  deleteBtn.addEventListener("click", () => void removeCreditCard(card.id));
-  actions.append(editBtn, purchaseBtn, instBtn, fixedBtn, deleteBtn);
-  const headRow = element("div", "panel-heading inline-heading");
-  headRow.append(title, actions);
-  head.append(headRow);
-
-  const kpis = element("div", "cards-detail-kpis");
-  [
-    ["Este mes", formatMoneyAmount(load.totalArs, "ARS"), "Total del resumen"],
-    ["Cuotas", formatMoneyAmount(load.installmentArs, "ARS"), "Caen este mes"],
-    ["Fijos", formatMoneyAmount(load.fixedArs, "ARS"), "Abonos del mes"],
-    ["Compras", formatMoneyAmount(load.purchaseArs, "ARS"), "Un pago del mes"],
-    ["Resto en cuotas", formatMoneyAmount(remainingInstallments, "ARS"), "Saldo de planes activos"],
-    ["Uso del límite", card.limitCents > 0
-      ? `${Math.min(999, Math.round((load.totalArs / card.limitCents) * 100))}%`
-      : "—", card.limitCents > 0 ? "Sobre el límite cargado" : "Definí un límite al editar"],
-  ].forEach(([label, value, copy]) => {
-    const kpi = element("div", "cards-detail-kpi");
-    kpi.append(element("span", "", label), element("strong", "", value), element("small", "", copy));
-    kpis.append(kpi);
-  });
-  head.append(kpis);
-
-  const cycleBox = element("div", "cards-cycle-box");
-  const cycleCopy = element("div", "");
-  cycleCopy.append(
-    element("strong", "", "Ciclo de este resumen"),
-    element(
-      "p",
-      "cards-charge-meta",
-      `Cierre: ${formatIsoDateLabel(card.closingDate)} · Vencimiento: ${formatIsoDateLabel(card.dueDate)}. ` +
-      "Las compras se asignan al resumen del ciclo según el día de cierre (después del cierre → mes siguiente).",
-    ),
-  );
-  const cycleEdit = element("button", "secondary-btn", "Actualizar fechas del ciclo");
-  cycleEdit.type = "button";
-  cycleEdit.addEventListener("click", () => openCardDialog(card.id));
-  cycleBox.append(cycleCopy, cycleEdit);
-  head.append(cycleBox);
-
-  const gen = element("div", "cards-generate-box");
-  const genCopy = element("div", "");
-  genCopy.append(
-    element("strong", "", "Generar resumen del mes"),
-    element(
-      "p",
-      "cards-charge-meta",
-      `Crea un gasto en Movimientos por ${formatMoneyAmount(load.totalArs, "ARS")} (estimado). ` +
-      "Podés editar el monto por percepciones u otros cargos del banco.",
-    ),
-  );
-  const genBtn = element("button", "primary-btn", "Generar resumen");
-  genBtn.type = "button";
-  genBtn.disabled = load.totalArs <= 0;
-  genBtn.addEventListener("click", () => generateCardStatement(card.id));
-  gen.append(genCopy, genBtn);
-  head.append(gen);
-  dom.cardsRoot.append(head);
-
-  const chargesPanel = element("article", "panel");
-  chargesPanel.append(
-    element("p", "eyebrow", "Cargos"),
-    element("h2", "", "Actividad de la tarjeta"),
-  );
-  if (!charges.length) {
-    chargesPanel.append(emptyState("Sin cargos", "Sumá una compra del mes, un plan en cuotas o un fijo."));
-  } else {
-    const groups = [
-      {
-        key: "purchase",
-        title: "Compras del mes (un pago)",
-        copy: "Suman solo al resumen del mes indicado.",
-        items: charges.filter((c) => c.chargeType === "purchase"),
-      },
-      {
-        key: "installment",
-        title: "Planes en cuotas",
-        copy: "Cada mes cae una cuota hasta saldar el plan.",
-        items: charges.filter((c) => c.chargeType === "installment"),
-      },
-      {
-        key: "fixed",
-        title: "Fijos mensuales",
-        copy: "Se repiten todos los meses mientras estén activos.",
-        items: charges.filter((c) => c.chargeType === "fixed"),
-      },
-    ];
-    groups.forEach((group) => {
-      if (!group.items.length) return;
-      const block = element("div", "cards-charge-group");
-      block.append(
-        element("h3", "cards-charge-group-title", `${group.title} (${group.items.length})`),
-        element("p", "cards-charge-meta", group.copy),
-      );
-      const list = element("div", "cards-charge-list");
-      group.items
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, "es"))
-        .forEach((charge) => list.append(renderChargeRow(charge)));
-      block.append(list);
-      chargesPanel.append(block);
-    });
-  }
-  dom.cardsRoot.append(chargesPanel);
-
-  // Cuotas que quedan (solo esta tarjeta)
-  const plans = charges.filter((charge) => charge.chargeType === "installment" && cardRemainingInstallments(charge) > 0);
-  if (plans.length) {
-    const future = element("article", "panel");
-    future.append(
-      element("p", "eyebrow", "Planificación"),
-      element("h2", "", "Cuotas que quedan"),
-    );
-    const list = element("div", "cards-future-list");
-    plans.forEach((charge) => {
-      const left = cardRemainingInstallments(charge);
-      const remaining = cardRemainingCents(charge);
-      const row = element("div", "cards-future-row");
-      row.append(
-        element("strong", "", charge.name),
-        element("span", "", `${left} cuota${left === 1 ? "" : "s"} · ${formatMoneyAmount(remaining, charge.currency)}`),
-      );
-      list.append(row);
-    });
-    future.append(list);
-    dom.cardsRoot.append(future);
-  }
-}
-
-function renderCards() {
-  if (!dom.cardsRoot) return;
-  renderCardsFxBar();
-  if (selectedCardId && !state.creditCards.some((card) => card.id === selectedCardId)) {
-    selectedCardId = "";
-  }
-  const selected = state.creditCards.find((card) => card.id === selectedCardId) || null;
-  if (dom.cardsBackBtn) dom.cardsBackBtn.hidden = !selected;
-  if (dom.cardsPageTitle) {
-    dom.cardsPageTitle.textContent = selected ? selected.name : "Tarjetas de crédito";
-  }
-  if (dom.cardsPageCopy) {
-    if (selected && isCuentaCorrienteCard(selected)) {
-      dom.cardsPageCopy.textContent =
-        "Cuenta corriente: detalle de movimientos. No suma a la carga de tarjetas (ya descontada del sueldo).";
-    } else if (selected) {
-      dom.cardsPageCopy.textContent =
-        "Detalle del plástico: compras, cuotas, fijos y generar resumen del mes.";
-    } else {
-      dom.cardsPageCopy.textContent =
-        "Carga del mes y plásticos. Las cuentas corrientes (ej. CC Mara) van aparte y no suman al total.";
-    }
-  }
-
-  dom.cardsRoot.replaceChildren();
-  if (selected) renderCardDetailView(selected);
-  else renderCardsListView();
-}
-
-function openCardDialog(editCardId = "") {
-  if (!dom.cardDialog || !dom.cardForm) return;
-  const existing = state.creditCards.find((card) => card.id === editCardId) || null;
-  dom.cardForm.reset();
-  if (dom.cardForm.elements.id) dom.cardForm.elements.id.value = existing?.id || "";
-  fillSelectOptions(dom.cardForm.elements.person, state.people.map((person) => person.name), { preserve: false });
-  setSelectValue(dom.cardForm.elements.person, existing?.person || state.people[0]?.name || "Compartido");
-  if (existing) {
-    dom.cardForm.elements.name.value = existing.name;
-    if (dom.cardForm.elements.closingDate) dom.cardForm.elements.closingDate.value = existing.closingDate || "";
-    if (dom.cardForm.elements.dueDate) dom.cardForm.elements.dueDate.value = existing.dueDate || "";
-    if (dom.cardForm.elements.limit) {
-      dom.cardForm.elements.limit.value = existing.limitCents ? String(fromCents(existing.limitCents)) : "";
-    }
-    if (dom.cardForm.elements.note) dom.cardForm.elements.note.value = existing.note || "";
-    if (dom.cardForm.elements.excludeFromCardTotals) {
-      dom.cardForm.elements.excludeFromCardTotals.checked = Boolean(existing.excludeFromCardTotals);
-    }
-  } else {
-    if (dom.cardForm.elements.closingDate) dom.cardForm.elements.closingDate.value = "";
-    if (dom.cardForm.elements.dueDate) dom.cardForm.elements.dueDate.value = "";
-    if (dom.cardForm.elements.limit) dom.cardForm.elements.limit.value = "";
-    if (dom.cardForm.elements.excludeFromCardTotals) {
-      dom.cardForm.elements.excludeFromCardTotals.checked = false;
-    }
-  }
-  const title = document.querySelector("#cardDialogTitle");
-  if (title) title.textContent = existing ? "Editar tarjeta / ciclo" : "Nueva tarjeta";
-  // Al tipear un nombre tipo “CC…”, marcar cuenta corriente (solo si el usuario no lo desmarcó a mano en esta sesión del form).
-  const nameInput = dom.cardForm.elements.name;
-  const excludeInput = dom.cardForm.elements.excludeFromCardTotals;
-  if (nameInput && excludeInput && !nameInput.dataset.ccAutoWired) {
-    nameInput.dataset.ccAutoWired = "1";
-    nameInput.addEventListener("input", () => {
-      if (excludeInput.dataset.userTouched === "1") return;
-      if (nameLooksLikeCuentaCorriente(nameInput.value)) {
-        excludeInput.checked = true;
-      }
-    });
-    excludeInput.addEventListener("change", () => {
-      excludeInput.dataset.userTouched = "1";
-    });
-  }
-  if (excludeInput) excludeInput.dataset.userTouched = existing ? "1" : "";
-  dom.cardDialog.showModal();
-  window.setTimeout(() => dom.cardForm.elements.name?.focus(), 40);
-}
-
-function openPurchaseDialog(preselectedCardId = "") {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de cargar una compra")) return;
-  if (!dom.purchaseDialog || !dom.purchaseForm) return;
-  if (!state.creditCards.length) {
-    showToast("Primero agregá una tarjeta en la sección Tarjetas");
-    switchView("cards");
-    return;
-  }
-  dom.purchaseForm.reset();
-  const cardSelect = dom.purchaseForm.elements.cardId;
-  fillSelectOptions(cardSelect, state.creditCards.map((card) => card.name), { preserve: false });
-  // Store ids as option values
-  cardSelect.replaceChildren();
-  state.creditCards.forEach((card) => {
-    const option = document.createElement("option");
-    option.value = card.id;
-    option.textContent = card.name;
-    cardSelect.append(option);
-  });
-  if (preselectedCardId && state.creditCards.some((card) => card.id === preselectedCardId)) {
-    cardSelect.value = preselectedCardId;
-  }
-  if (dom.purchaseForm.elements.monthKey) {
-    const card = state.creditCards.find((item) => item.id === cardSelect.value);
-    dom.purchaseForm.elements.monthKey.value = card
-      ? statementMonthKeyForPurchase(card)
-      : state.activeMonth;
-  }
-  if (dom.purchaseForm.elements.currency) dom.purchaseForm.elements.currency.value = "ARS";
-  // Si cambia la tarjeta, reasignar mes del resumen según cierre.
-  cardSelect.onchange = () => {
-    const card = state.creditCards.find((item) => item.id === cardSelect.value);
-    if (card && dom.purchaseForm.elements.monthKey) {
-      dom.purchaseForm.elements.monthKey.value = statementMonthKeyForPurchase(card);
-    }
-  };
-  dom.purchaseDialog.showModal();
-  window.setTimeout(() => dom.purchaseForm.elements.name?.focus(), 40);
-}
-
-function updateChargeAmountModeUI() {
-  if (!dom.chargeForm) return;
-  const isInstallment = dom.chargeForm.elements.chargeType.value !== "fixed";
-  const mode = dom.chargeForm.elements.amountMode?.value === "cuota" ? "cuota" : "total";
-  if (dom.chargeAmountModeField) dom.chargeAmountModeField.hidden = !isInstallment;
-  if (dom.chargeInstallmentsField) dom.chargeInstallmentsField.hidden = !isInstallment;
-  if (dom.chargePaidField) dom.chargePaidField.hidden = !isInstallment;
-  if (dom.chargeTotalField) dom.chargeTotalField.hidden = !isInstallment || mode !== "total";
-  if (dom.chargeCuotaField) dom.chargeCuotaField.hidden = !isInstallment || mode !== "cuota";
-  if (dom.chargeMonthlyField) dom.chargeMonthlyField.hidden = isInstallment;
-  if (dom.chargeForm.elements.totalAmount) {
-    dom.chargeForm.elements.totalAmount.required = isInstallment && mode === "total";
-  }
-  if (dom.chargeForm.elements.cuotaAmount) {
-    dom.chargeForm.elements.cuotaAmount.required = isInstallment && mode === "cuota";
-  }
-  if (dom.chargeForm.elements.installments) {
-    dom.chargeForm.elements.installments.required = isInstallment;
-  }
-  if (dom.chargeForm.elements.paidInstallments) {
-    dom.chargeForm.elements.paidInstallments.required = isInstallment;
-  }
-  if (dom.chargeForm.elements.monthlyAmount) {
-    dom.chargeForm.elements.monthlyAmount.required = !isInstallment;
-  }
-  updateChargeAmountHint();
-}
-
-function updateChargeAmountHint() {
-  if (!dom.chargeAmountHint || !dom.chargeForm) return;
-  if (dom.chargeForm.elements.chargeType.value === "fixed") {
-    dom.chargeAmountHint.textContent = "";
-    return;
-  }
-  const mode = dom.chargeForm.elements.amountMode?.value === "cuota" ? "cuota" : "total";
-  const installments = Math.min(Math.max(Math.trunc(Number(dom.chargeForm.elements.installments.value) || 0), 0), 120);
-  const currency = dom.chargeForm.elements.currency?.value === "USD" ? "USD" : "ARS";
-  if (mode === "cuota") {
-    const cuotaCents = toCents(dom.chargeForm.elements.cuotaAmount?.value);
-    if (cuotaCents > 0 && installments >= 2) {
-      const totalCents = cuotaCents * installments;
-      dom.chargeAmountHint.textContent =
-        `${installments} cuotas de ${formatMoneyAmount(cuotaCents, currency)} = total ${formatMoneyAmount(totalCents, currency)}`;
-    } else {
-      dom.chargeAmountHint.textContent = "Ingresá el valor de cada cuota y la cantidad; el total se calcula solo.";
-    }
-    return;
-  }
-  const totalCents = toCents(dom.chargeForm.elements.totalAmount?.value);
-  if (totalCents > 0 && installments >= 2) {
-    const approx = Math.round(totalCents / installments);
-    dom.chargeAmountHint.textContent =
-      `Total ${formatMoneyAmount(totalCents, currency)} ≈ ${formatMoneyAmount(approx, currency)} por cuota (la última se ajusta si hace falta)`;
-  } else {
-    dom.chargeAmountHint.textContent = "Ingresá el total del plan; se reparte en las cuotas sin perder centavos.";
-  }
-}
-
-function openChargeDialog(cardId, chargeType = "installment") {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de agregar un cargo")) return;
-  if (!dom.chargeDialog || !dom.chargeForm) return;
-  dom.chargeForm.reset();
-  dom.chargeForm.elements.cardId.value = cardId;
-  dom.chargeForm.elements.chargeType.value = chargeType;
-  if (dom.chargeForm.elements.amountMode) dom.chargeForm.elements.amountMode.value = "total";
-  if (dom.chargeForm.elements.installments) dom.chargeForm.elements.installments.value = "12";
-  if (dom.chargeForm.elements.paidInstallments) dom.chargeForm.elements.paidInstallments.value = "0";
-  updateChargeAmountModeUI();
-  if (dom.chargeDialogTitle) {
-    dom.chargeDialogTitle.textContent = chargeType === "installment" ? "Plan en cuotas" : "Gasto fijo en tarjeta";
-  }
-  dom.chargeDialog.showModal();
-  window.setTimeout(() => dom.chargeForm.elements.name?.focus(), 40);
-}
-
-async function saveCreditCard(event) {
-  event.preventDefault();
-  const formData = new FormData(dom.cardForm);
-  const existingId = sanitizeText(formData.get("id"));
-  const card = normalizeCreditCard({
-    id: existingId || createId(),
-    name: formData.get("name"),
-    person: formData.get("person"),
-    note: formData.get("note"),
-    closingDate: formData.get("closingDate"),
-    dueDate: formData.get("dueDate"),
-    limit: formData.get("limit"),
-    excludeFromCardTotals: formData.get("excludeFromCardTotals") === "on"
-      || formData.get("excludeFromCardTotals") === "true",
-  });
-  if (!card) return;
-  const previousState = cloneState(state);
-  const index = state.creditCards.findIndex((item) => item.id === card.id);
-  if (index >= 0) state.creditCards[index] = card;
-  else state.creditCards.push(card);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.cardDialog.close();
-  if (index < 0) selectedCardId = card.id;
-  render();
-  showToast(index >= 0 ? "Tarjeta / ciclo actualizado" : "Tarjeta agregada");
-}
-
-async function generateCardStatement(cardId) {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de generar un resumen")) return;
-  const card = state.creditCards.find((item) => item.id === cardId);
-  if (!card) return;
-  const load = getCardMonthLoad(cardId, state.activeMonth);
-  if (load.totalArs <= 0) {
-    showToast("No hay carga estimada este mes para generar un resumen");
-    return;
-  }
-  const confirmed = await confirmAction({
-    title: `Resumen · ${card.name}`,
-    copy:
-      `Se va a crear un gasto en Movimientos por el estimado de ${formatMonthLabel(state.activeMonth)}. `
-      + "Si el banco cobró distinto (percepciones, etc.), después lo editás desde Movimientos.",
-    details: [
-      `Total estimado: ${formatMoneyAmount(load.totalArs, "ARS")}`,
-      `Cuotas: ${formatMoneyAmount(load.installmentArs, "ARS")}`,
-      `Fijos: ${formatMoneyAmount(load.fixedArs, "ARS")}`,
-      `Compras: ${formatMoneyAmount(load.purchaseArs, "ARS")}`,
-      `Persona: ${card.person || "Compartido"}`,
-      "Estado: pagado al crear",
-    ],
-    confirmLabel: "Crear en Movimientos",
-  });
-  if (!confirmed) return;
-  const finalCents = load.totalArs;
-  const transaction = normalizeTransaction({
-    id: createId(),
-    kind: "expense",
-    name: `Resumen ${card.name}`,
-    category: "Tarjeta de crédito",
-    person: card.person || "Compartido",
-    amountCents: finalCents,
-    scheduleType: "one-time",
-    startMonth: state.activeMonth,
-    dueDay: isValidIsoDate(card.dueDate) ? Number(card.dueDate.slice(8, 10)) : 0,
-    note: [
-      "Generado desde Tarjetas",
-      isValidIsoDate(card.closingDate) ? `cierre ${card.closingDate}` : null,
-      isValidIsoDate(card.dueDate) ? `vence ${card.dueDate}` : null,
-      `est. ${formatMoneyAmount(load.totalArs, "ARS")}`,
-      "podés editar por percepciones",
-    ].filter(Boolean).join(" · "),
-  });
-  if (!transaction) {
-    showToast("No se pudo crear el movimiento");
-    return;
-  }
-  if (!state.categories.some((category) =>
-    category.localeCompare("Tarjeta de crédito", "es", { sensitivity: "base" }) === 0
-  )) {
-    state.categories.push("Tarjeta de crédito");
-    state.categories.sort((a, b) => a.localeCompare(b, "es"));
-  }
-  const previousState = cloneState(state);
-  state.transactions.push(transaction);
-  const occurrence = occurrenceForMonth(transaction, state.activeMonth, {});
-  if (occurrence) {
-    state.occurrences[`${transaction.id}:${state.activeMonth}`] = materializeOccurrence(occurrence, {
-      status: "paid",
-      actualAmountCents: finalCents,
-      effectiveDate: localDateKey(),
-    });
-  }
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast("Resumen creado en Movimientos (pagado)", {
-    label: "Ver / editar",
-    handler: () => {
-      switchView("movements");
-      openMovementDialog(transaction.id, state.activeMonth);
-    },
-  });
-}
-
-async function saveCardCharge(event) {
-  event.preventDefault();
-  const formData = new FormData(dom.chargeForm);
-  const rawType = formData.get("chargeType");
-  const chargeType = rawType === "fixed" ? "fixed" : rawType === "purchase" ? "purchase" : "installment";
-  let totalAmount = formData.get("totalAmount");
-  if (chargeType === "installment" && formData.get("amountMode") === "cuota") {
-    const installments = Math.min(Math.max(Math.trunc(Number(formData.get("installments")) || 0), 2), 120);
-    const cuotaCents = toCents(formData.get("cuotaAmount"));
-    if (cuotaCents <= 0 || installments < 2) {
-      showToast("Ingresá valor de cuota y cantidad de cuotas");
-      return;
-    }
-    // Total exacto = cuota × N (todas las cuotas iguales en este modo).
-    totalAmount = fromCents(cuotaCents * installments);
-  }
-  const charge = normalizeCardCharge({
-    id: createId(),
-    cardId: formData.get("cardId"),
-    name: formData.get("name"),
-    chargeType,
-    currency: formData.get("currency"),
-    totalAmount,
-    installments: formData.get("installments"),
-    paidInstallments: formData.get("paidInstallments") || 0,
-    monthlyAmount: formData.get("monthlyAmount"),
-    monthKey: formData.get("monthKey"),
-    note: formData.get("note"),
-    active: true,
-  }, new Set(state.creditCards.map((card) => card.id)));
-  if (!charge) {
-    showToast("Revisá los datos del cargo");
-    return;
-  }
-  const monthForLimit = charge.chargeType === "purchase"
-    ? (charge.monthKey || state.activeMonth)
-    : state.activeMonth;
-  if (!requireOpenMonth(monthForLimit, "Reabrí el mes del cargo antes de agregar")) return;
-  const over = wouldExceedCardLimit(charge.cardId, chargeAmountArsForLimit(charge), monthForLimit);
-  if (over) {
-    showToast(
-      `Supera el límite de ${over.card.name} `
-      + `(${formatMoneyAmount(over.limitCents, "ARS")}; quedaría en ${formatMoneyAmount(over.nextTotal, "ARS")})`,
-    );
-    return;
-  }
-  const previousState = cloneState(state);
-  state.cardCharges.push(charge);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.chargeDialog.close();
-  render();
-  showToast(
-    chargeType === "installment"
-      ? "Plan en cuotas agregado"
-      : chargeType === "purchase"
-        ? "Compra en tarjeta registrada"
-        : "Gasto fijo agregado",
-  );
-}
-
-async function saveCardPurchase(event) {
-  event.preventDefault();
-  if (!dom.purchaseForm) return;
-  const formData = new FormData(dom.purchaseForm);
-  const cardId = sanitizeText(formData.get("cardId"));
-  const card = state.creditCards.find((item) => item.id === cardId);
-  // Mes del resumen: el del form, o el que corresponde al ciclo de cierre.
-  let monthKey = formData.get("monthKey") || "";
-  if (!isValidMonthKey(monthKey) && card) {
-    monthKey = statementMonthKeyForPurchase(card);
-  }
-  if (!isValidMonthKey(monthKey)) monthKey = state.activeMonth;
-  if (!requireOpenMonth(monthKey, "Reabrí el mes del resumen antes de cargar la compra")) return;
-  const charge = normalizeCardCharge({
-    id: createId(),
-    cardId,
-    name: formData.get("name"),
-    chargeType: "purchase",
-    currency: formData.get("currency"),
-    totalAmount: formData.get("amount"),
-    monthKey,
-    note: formData.get("note"),
-    active: true,
-  }, new Set(state.creditCards.map((item) => item.id)));
-  if (!charge) {
-    showToast("Revisá tarjeta, concepto y monto");
-    return;
-  }
-  const over = wouldExceedCardLimit(charge.cardId, chargeAmountArsForLimit(charge), charge.monthKey);
-  if (over) {
-    showToast(
-      `Supera el límite de ${over.card.name} `
-      + `(tope ${formatMoneyAmount(over.limitCents, "ARS")}; con este gasto: ${formatMoneyAmount(over.nextTotal, "ARS")})`,
-    );
-    return;
-  }
-  const previousState = cloneState(state);
-  state.cardCharges.push(charge);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.purchaseDialog.close();
-  render();
-  const cycleNote = card && isValidIsoDate(card.closingDate)
-    ? ` · cierre ${formatIsoDateLabel(card.closingDate)}`
-    : "";
-  showToast(`Compra en resumen ${formatMonthLabel(charge.monthKey)}${cycleNote}`);
-}
-
-async function removeCreditCard(cardId) {
-  const card = state.creditCards.find((item) => item.id === cardId);
-  if (!card) return;
-  const confirmed = await confirmAction({
-    title: "Eliminar tarjeta",
-    copy: `¿Eliminar “${card.name}” y todos sus cargos? No afecta los KPIs del hogar.`,
-    confirmLabel: "Eliminar",
-    danger: true,
-  });
-  if (!confirmed) return;
-  const previousState = cloneState(state);
-  state.creditCards = state.creditCards.filter((item) => item.id !== cardId);
-  state.cardCharges = state.cardCharges.filter((item) => item.cardId !== cardId);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  if (selectedCardId === cardId) selectedCardId = "";
-  render();
-  showToast("Tarjeta eliminada", {
-    label: "Deshacer",
-    handler: async () => {
-      const before = cloneState(state);
-      state = previousState;
-      if (!await saveState()) {
-        state = before;
-        render();
-        return;
-      }
-      render();
-      showToast("Tarjeta restaurada");
-    },
-  });
-}
-
-async function removeCardCharge(chargeId) {
-  const charge = state.cardCharges.find((item) => item.id === chargeId);
-  const guardMonth = charge?.chargeType === "purchase"
-    ? (charge.monthKey || state.activeMonth)
-    : state.activeMonth;
-  if (!requireOpenMonth(guardMonth, "Reabrí el mes antes de eliminar un cargo")) return;
-  const previousState = cloneState(state);
-  state.cardCharges = state.cardCharges.filter((item) => item.id !== chargeId);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast("Cargo eliminado", {
-    label: "Deshacer",
-    handler: async () => {
-      const before = cloneState(state);
-      state = previousState;
-      if (!await saveState()) {
-        state = before;
-        render();
-        return;
-      }
-      render();
-      showToast("Cargo restaurado");
-    },
-  });
-}
-
-/** Copia movimientos “una sola vez” del mes anterior al mes activo (como nuevos, ya cobrados/pagados). */
-async function copyFromPreviousMonth() {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de copiar")) return;
-  const prevMonth = addMonths(state.activeMonth, -1);
-  const candidates = state.transactions.filter((tx) =>
-    tx.schedule?.type === "one-time" && tx.schedule.startMonth === prevMonth
-  );
-  if (!candidates.length) {
-    showToast(`No hay movimientos “una sola vez” en ${formatMonthLabel(prevMonth)}`);
-    return;
-  }
-  const currentNames = new Set(
-    getMonthTotals(state.activeMonth).occurrences.map((item) =>
-      `${item.kind}|${item.name}|${item.amountThisMonthCents}`
-    ),
-  );
-  const toCopy = candidates.filter((tx) => {
-    const key = `${tx.kind}|${tx.name}|${tx.amountCents}`;
-    return !currentNames.has(key);
-  });
-  if (!toCopy.length) {
-    showToast("Esos movimientos ya están (o algo muy parecido) en este mes");
-    return;
-  }
-  const confirmed = await confirmAction({
-    title: "Copiar del mes anterior",
-    copy:
-      `Se van a copiar ${toCopy.length} movimiento${toCopy.length === 1 ? "" : "s"} de `
-      + `${formatMonthLabel(prevMonth)} a ${formatMonthLabel(state.activeMonth)}. `
-      + "Quedan cobrados/pagados. Los mensuales y en cuotas no se copian (ya se proyectan solos).",
-    details: toCopy.slice(0, 8).map((tx) =>
-      `${tx.kind === "income" ? "+" : "-"} ${tx.name} · ${formatCurrency(tx.amountCents)}`
-    ).concat(toCopy.length > 8 ? [`… y ${toCopy.length - 8} más`] : []),
-    confirmLabel: "Copiar",
-  });
-  if (!confirmed) return;
-  const previousState = cloneState(state);
-  toCopy.forEach((source) => {
-    const transaction = normalizeTransaction({
-      ...source,
-      id: createId(),
-      startMonth: state.activeMonth,
-      scheduleType: "one-time",
-      endMonth: "",
-      installments: 1,
-      createdAt: new Date().toISOString(),
-    });
-    if (!transaction) return;
-    state.transactions.push(transaction);
-    const occurrence = occurrenceForMonth(transaction, state.activeMonth, {});
-    if (occurrence) {
-      state.occurrences[`${transaction.id}:${state.activeMonth}`] = materializeOccurrence(occurrence, {
-        status: "paid",
-        actualAmountCents: occurrence.amountThisMonthCents,
-        effectiveDate: localDateKey(),
-      });
-    }
-  });
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast(`${toCopy.length} movimiento${toCopy.length === 1 ? "" : "s"} copiado${toCopy.length === 1 ? "" : "s"}`, {
-    label: "Deshacer",
-    handler: async () => {
-      const before = cloneState(state);
-      state = previousState;
-      if (!await saveState()) {
-        state = before;
-        render();
-        return;
-      }
-      render();
-      showToast("Copia deshecha");
-    },
-  });
-}
-
-function focusGlobalSearch() {
-  switchView("movements");
-  render();
-  requestAnimationFrame(() => {
-    const input = dom.movementSearch;
-    if (!input) return;
-    input.focus();
-    input.select?.();
-  });
-}
-
-const QUICK_TEMPLATES = [
-  { name: "Sueldo", kind: "income", category: "Sueldo" },
-  { name: "Alquiler", kind: "expense", category: "Alquiler" },
-  { name: "Expensas", kind: "expense", category: "Expensas" },
-  { name: "Supermercado", kind: "expense", category: "Supermercado" },
-  { name: "Transporte", kind: "expense", category: "Transporte" },
-  { name: "Servicios", kind: "expense", category: "Servicios" },
-];
-
-function renderMovementTemplates() {
-  let host = document.querySelector("#movementTemplates");
-  if (!dom.movementForm) return;
-  if (!host) {
-    host = element("div", "movement-templates");
-    host.id = "movementTemplates";
-    const grid = dom.movementForm.querySelector(".form-grid");
-    if (grid) grid.before(host);
-    else dom.movementForm.prepend(host);
-  }
-  const isEdit = Boolean(sanitizeText(dom.movementForm.elements.id?.value));
-  host.hidden = isEdit;
-  if (isEdit) {
-    host.replaceChildren();
-    return;
-  }
-  host.replaceChildren(element("p", "movement-templates-label", "Plantillas rápidas"));
-  const row = element("div", "movement-templates-row");
-  QUICK_TEMPLATES.forEach((tpl) => {
-    const chip = element("button", "template-chip", tpl.name);
-    chip.type = "button";
-    chip.addEventListener("click", () => {
-      [...dom.movementForm.elements.kind].forEach((input) => {
-        input.checked = input.value === tpl.kind;
-      });
-      dom.movementForm.elements.name.value = tpl.name;
-      setSelectValue(dom.movementForm.elements.category, tpl.category);
-      requestAnimationFrame(() => dom.movementForm.elements.amount?.focus?.());
-    });
-    row.append(chip);
-  });
-  host.append(row);
-}
-
-async function markCardCuotaPaid(chargeId) {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de marcar cuotas")) return;
-  const charge = state.cardCharges.find((item) => item.id === chargeId);
-  if (!charge || charge.chargeType !== "installment") return;
-  if (charge.paidInstallments >= charge.installments) return;
-  const previousState = cloneState(state);
-  charge.paidInstallments += 1;
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast(charge.paidInstallments >= charge.installments ? "Plan saldado" : "Cuota marcada");
-}
-
-async function unmarkCardCuotaPaid(chargeId) {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de desmarcar cuotas")) return;
-  const charge = state.cardCharges.find((item) => item.id === chargeId);
-  if (!charge || charge.chargeType !== "installment" || charge.paidInstallments <= 0) return;
-  const previousState = cloneState(state);
-  charge.paidInstallments -= 1;
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast("Cuota desmarcada");
-}
-
-async function refreshUsdRate() {
-  try {
-    // Prefer blue sell as a household estimate; fallback to official.
-    let rate = null;
-    let label = "";
-    let updated = "";
-    try {
-      const blue = await fetch("https://dolarapi.com/v1/dolares/blue", { cache: "no-store" });
-      if (blue.ok) {
-        const data = await blue.json();
-        rate = Number(data.venta);
-        label = "dólar blue (venta)";
-        updated = data.fechaActualizacion
-          ? new Date(data.fechaActualizacion).toLocaleString("es-AR")
-          : new Date().toLocaleString("es-AR");
-      }
-    } catch {
-      // try next source
-    }
-    if (!Number.isFinite(rate) || rate <= 0) {
-      const official = await fetch("https://dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
-      if (!official.ok) throw new Error("sin cotización");
-      const data = await official.json();
-      rate = Number(data.venta);
-      label = "dólar oficial (venta)";
-      updated = data.fechaActualizacion
-        ? new Date(data.fechaActualizacion).toLocaleString("es-AR")
-        : new Date().toLocaleString("es-AR");
-    }
-    if (!Number.isFinite(rate) || rate <= 0) throw new Error("cotización inválida");
-    const previousState = cloneState(state);
-    state.fx.apiUsdArs = rate;
-    state.fx.apiLabel = label;
-    state.fx.apiUpdatedAt = updated;
-    if (!state.fx.useManual) state.fx.usdArs = rate;
-    if (!await saveState()) {
-      state = previousState;
-      render();
-      return;
-    }
-    render();
-    showToast(`Cotización actualizada: $ ${formatFxRate(rate)} (${label})`);
-  } catch (error) {
-    console.warn("No se pudo obtener el dólar.", error);
-    showToast("No pudimos consultar el dólar. Podés cargar un valor manual.");
-  }
-}
-
-async function applyManualFx() {
-  if (!dom.fxRateInput) return;
-  const rate = Number(String(dom.fxRateInput.value).replace(",", "."));
-  if (!Number.isFinite(rate) || rate <= 0) {
-    showToast("Ingresá un tipo de cambio válido");
-    return;
-  }
-  const previousState = cloneState(state);
-  state.fx.useManual = Boolean(dom.fxUseManual?.checked);
-  state.fx.manualUsdArs = rate;
-  state.fx.usdArs = rate;
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast(state.fx.useManual ? "Tipo de cambio manual guardado" : "Valor guardado (activá “usar manual” para forzar)");
-}
-
-function countPlannedOutsideMonth(monthKey) {
-  return (state.plannedItems || []).filter((item) => {
-    if (item.recurrence === "monthly") {
-      // Mensual que todavía no empezó este mes (empieza después).
-      return monthDiff(item.monthKey, monthKey) < 0;
-    }
-    if (item.monthKey === monthKey) return false;
-    return plannedStatusForMonth(item, item.monthKey) === "open";
-  }).length;
-}
-
-function renderPlanned() {
-  if (!dom.plannedList) return;
-  if (!Array.isArray(state.plannedItems)) state.plannedItems = [];
-  const typeFilter = dom.plannedTypeFilter?.value || "all";
-  const statusFilter = dom.plannedStatusFilter?.value || "open";
-  const monthKey = state.activeMonth;
-
-  const rows = state.plannedItems
-    .filter((item) => plannedAppliesToMonth(item, monthKey))
-    .filter((item) => typeFilter === "all" || item.kind === typeFilter)
-    .map((item) => ({ item, status: plannedStatusForMonth(item, monthKey) }))
-    .filter(({ status }) => {
-      if (statusFilter === "open") return status === "open";
-      if (statusFilter === "done") return status === "fulfilled" || status === "dismissed";
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.status !== b.status) {
-        const order = { open: 0, fulfilled: 1, dismissed: 2 };
-        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
-      }
-      return (a.item.dueDay || 32) - (b.item.dueDay || 32)
-        || a.item.name.localeCompare(b.item.name, "es");
-    });
-
-  const openItems = state.plannedItems
-    .filter((item) => plannedAppliesToMonth(item, monthKey) && plannedStatusForMonth(item, monthKey) === "open");
-  const incomeOpen = openItems.filter((item) => item.kind === "income")
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const expenseOpen = openItems.filter((item) => item.kind === "expense")
-    .reduce((sum, item) => sum + item.amountCents, 0);
-  const outsideCount = countPlannedOutsideMonth(monthKey);
-
-  if (dom.plannedTotals) {
-    dom.plannedTotals.replaceChildren();
-    [
-      ["Ingresos abiertos", incomeOpen, "income"],
-      ["Gastos abiertos", expenseOpen, "expense"],
-      ["Pendientes", openItems.length, "pending"],
-    ].forEach(([label, value, tone]) => {
-      const cell = element("div", "list-total");
-      cell.dataset.tone = tone;
-      cell.append(
-        element("span", "", label),
-        element("strong", "", typeof value === "number" && tone !== "pending"
-          ? formatCurrency(value)
-          : String(value)),
-      );
-      dom.plannedTotals.append(cell);
-    });
-  }
-
-  dom.plannedList.replaceChildren();
-  if (outsideCount > 0) {
-    const note = element("p", "planned-other-months");
-    note.append(
-      document.createTextNode("Hay "),
-      element("strong", "", String(outsideCount)),
-      document.createTextNode(
-        outsideCount === 1
-          ? " previsto en otro mes (cambiá el mes arriba para verlo)."
-          : " previstos en otros meses (cambiá el mes arriba para verlos).",
-      ),
-    );
-    dom.plannedList.append(note);
-  }
-  if (!rows.length) {
-    dom.plannedList.append(emptyState(
-      statusFilter === "open" ? "Nada pendiente este mes" : "Sin previstos en este filtro",
-      outsideCount > 0
-        ? "En este mes no hay nada con el filtro actual. Revisá el aviso de otros meses o agregá un previsto."
-        : "Agregá un previsto (sueldo, alquiler, cuota…) y confirmalo cuando se cumpla.",
-      { label: "+ Agregar previsto", onClick: () => openPlannedDialog() },
-    ));
-    return;
-  }
-
-  rows.forEach(({ item, status }) => {
-    const row = element("article", "movement-row planned-row");
-    row.dataset.kind = item.kind;
-    if (status !== "open") row.dataset.muted = "true";
-
-    const body = element("div", "movement-body");
-    const titleLine = element("div", "movement-title-line");
-    titleLine.append(
-      element("strong", "movement-name", item.name),
-      element("span", "kind-badge", item.kind === "income" ? "Ingreso" : "Gasto"),
-    );
-    const statusLabel = status === "fulfilled"
-      ? "Cumplido · ya en Movimientos"
-      : status === "dismissed"
-        ? "No se cumplió"
-        : item.recurrence === "monthly"
-          ? "Mensual · pendiente"
-          : "Pendiente";
-    const meta = element("p", "movement-meta", [
-      item.category,
-      item.person,
-      item.dueDate ? formatIsoDateLabel(item.dueDate) : (item.dueDay ? `Día ${item.dueDay}` : ""),
-      statusLabel,
-    ].filter(Boolean).join(" · "));
-    body.append(titleLine, meta);
-
-    const amount = element("div", "movement-amount");
-    amount.append(
-      element("strong", "", `${item.kind === "income" ? "+" : "-"}${formatCurrency(item.amountCents)}`),
-      element("small", "", "Esperado"),
-    );
-
-    const actions = element("div", "planned-row-actions");
-    if (status === "open") {
-      const confirmBtn = element("button", "primary-btn planned-mini-btn", "Confirmar");
-      confirmBtn.type = "button";
-      confirmBtn.addEventListener("click", () => openPlannedConfirm(item.id));
-      actions.append(confirmBtn);
-    }
-    const editBtn = element("button", "row-menu", "Editar");
-    editBtn.type = "button";
-    editBtn.addEventListener("click", () => openPlannedDialog(item.id));
-    actions.append(editBtn);
-
-    row.append(body, amount, actions);
-    dom.plannedList.append(row);
-  });
-}
-
-function updatePlannedFormFields() {
-  if (!dom.plannedForm) return;
-  const monthly = dom.plannedForm.elements.recurrence?.value === "monthly";
-  if (dom.plannedEndMonthField) dom.plannedEndMonthField.hidden = !monthly;
-}
-
-function openPlannedDialog(id = "") {
-  if (!dom.plannedDialog || !dom.plannedForm) return;
-  // Alta o edición de un plan del mes activo: no permitir si el mes está cerrado.
-  // (Editar un plan de otro mes abierto sí se puede al cambiar la fecha.)
-  if (!id && !requireOpenMonth(state.activeMonth, "Reabrí el mes antes de agregar un previsto")) return;
-  const item = id ? state.plannedItems.find((entry) => entry.id === id) : null;
-  if (item && isMonthClosed(item.monthKey) && item.recurrence === "once") {
-    showToast("Reabrí el mes del previsto antes de editarlo");
-    return;
-  }
-  dom.plannedForm.reset();
-  fillSelectOptions(dom.plannedForm.elements.category, state.categories, {
-    preserve: false,
-    extra: item?.category ? [item.category] : [],
-  });
-  fillSelectOptions(dom.plannedForm.elements.person, state.people.map((person) => person.name), {
-    preserve: false,
-    extra: item?.person ? [item.person] : [],
-  });
-  const prefs = loadFormPrefs();
-  dom.plannedForm.elements.id.value = item?.id || "";
-  dom.plannedForm.elements.kind.value = item?.kind || prefs.kind || "expense";
-  dom.plannedForm.elements.name.value = item?.name || "";
-  setSelectValue(dom.plannedForm.elements.category, item?.category || prefs.category || state.categories[0] || "Otros");
-  setSelectValue(dom.plannedForm.elements.person, item?.person || prefs.person || state.people[0]?.name || "Compartido");
-  dom.plannedForm.elements.amount.value = item ? fromCents(item.amountCents) : "";
-  dom.plannedForm.elements.monthKey.value = item?.monthKey || state.activeMonth;
-  dom.plannedForm.elements.recurrence.value = item?.recurrence || "once";
-  dom.plannedForm.elements.endMonth.value = item?.endMonth || "";
-  if (dom.plannedForm.elements.dueDate) {
-    const fallbackDay = new Date().getDate();
-    dom.plannedForm.elements.dueDate.value = item?.dueDate
-      || (item?.dueDay ? clampDateToMonth(item.monthKey || state.activeMonth, item.dueDay) : "")
-      || clampDateToMonth(state.activeMonth, fallbackDay)
-      || `${state.activeMonth}-01`;
-  }
-  // monthKey ya no se edita a mano: se deriva de la fecha.
-  if (dom.plannedForm.elements.monthKey) {
-    dom.plannedForm.elements.monthKey.value = item?.monthKey || state.activeMonth;
-  }
-  dom.plannedForm.elements.note.value = item?.note || "";
-  if (dom.plannedDialogTitle) {
-    dom.plannedDialogTitle.textContent = item ? "Editar previsto" : "Nuevo previsto";
-  }
-  if (dom.deletePlannedBtn) dom.deletePlannedBtn.hidden = !item;
-  updatePlannedFormFields();
-  dom.plannedDialog.showModal();
-  window.setTimeout(() => dom.plannedForm.elements.name.focus(), 40);
-}
-
-async function savePlannedItem(event) {
-  event.preventDefault();
-  if (!dom.plannedForm) return;
-  const formData = new FormData(dom.plannedForm);
-  const existingId = sanitizeText(formData.get("id"));
-  const existing = existingId
-    ? state.plannedItems.find((item) => item.id === existingId)
-    : null;
-  const dueDateRaw = sanitizeText(formData.get("dueDate"));
-  if (!isValidIsoDate(dueDateRaw)) {
-    showToast("Elegí una fecha válida del calendario");
-    return;
-  }
-  // El mes del plan sale de la fecha (un solo control).
-  const monthKeyFromDate = dueDateRaw.slice(0, 7);
-  if (!requireOpenMonth(monthKeyFromDate, "Reabrí el mes de la fecha antes de guardar el previsto")) return;
-  if (existing?.monthKey && existing.monthKey !== monthKeyFromDate
-    && !requireOpenMonth(existing.monthKey, "Reabrí el mes original del previsto antes de moverlo")) {
-    return;
-  }
-  const item = normalizePlannedItem({
-    id: existingId || createId(),
-    kind: formData.get("kind"),
-    name: formData.get("name"),
-    category: formData.get("category"),
-    person: formData.get("person"),
-    amount: formData.get("amount"),
-    monthKey: monthKeyFromDate,
-    recurrence: formData.get("recurrence"),
-    endMonth: formData.get("endMonth"),
-    dueDate: dueDateRaw,
-    note: formData.get("note"),
-    createdAt: existing?.createdAt,
-    fulfilledMonths: existing?.fulfilledMonths || [],
-    dismissedMonths: existing?.dismissedMonths || [],
-  });
-  if (!item) {
-    showToast("Revisá concepto, fecha y monto del previsto");
-    return;
-  }
-  const previousState = cloneState(state);
-  if (!Array.isArray(state.plannedItems)) state.plannedItems = [];
-  const index = state.plannedItems.findIndex((entry) => entry.id === item.id);
-  if (index >= 0) state.plannedItems[index] = item;
-  else state.plannedItems.push(item);
-
-  if (!state.people.some((person) => person.name.toLocaleLowerCase("es") === item.person.toLocaleLowerCase("es"))) {
-    state.people.push({ id: createId(), name: item.person });
-  }
-  if (!state.categories.some((category) =>
-    category.localeCompare(item.category, "es", { sensitivity: "base" }) === 0
-  )) {
-    state.categories.push(item.category);
-    state.categories.sort((a, b) => a.localeCompare(b, "es"));
-  }
-
-  // Si el previsto es de otro mes, mostramos ese mes para que aparezca en la lista.
-  if (item.monthKey && item.monthKey !== state.activeMonth) {
-    state.activeMonth = item.monthKey;
-  }
-
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.plannedDialog.close();
-  render();
-  showToast(existingId ? "Previsto actualizado" : "Previsto agregado");
-}
-
-async function deletePlannedItem() {
-  const id = sanitizeText(dom.plannedForm?.elements?.id?.value);
-  if (!id) return;
-  const confirmed = await confirmAction({
-    title: "Eliminar previsto",
-    copy: "Se borra el plan. Los movimientos ya incorporados no se tocan.",
-    confirmLabel: "Eliminar",
-    danger: true,
-  });
-  if (!confirmed) return;
-  const previousState = cloneState(state);
-  state.plannedItems = (state.plannedItems || []).filter((item) => item.id !== id);
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.plannedDialog?.close();
-  render();
-  showToast("Previsto eliminado", {
-    label: "Deshacer",
-    handler: async () => {
-      const before = cloneState(state);
-      state = previousState;
-      if (!await saveState()) {
-        state = before;
-        render();
-        return;
-      }
-      render();
-      showToast("Previsto restaurado");
-    },
-  });
-}
-
-/** Abre un alta nueva con los datos del movimiento que se está editando. */
-function duplicateMovementFromDialog() {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de duplicar")) return;
-  const formData = new FormData(dom.movementForm);
-  const draft = {
-    kind: formData.get("kind") || "expense",
-    name: sanitizeText(formData.get("name")),
-    category: formData.get("category"),
-    person: formData.get("person"),
-    amount: formData.get("amount"),
-    scheduleType: formData.get("scheduleType") || "one-time",
-    startMonth: state.activeMonth,
-    installments: formData.get("installments") || 2,
-    endMonth: "",
-    dueDate: formData.get("dueDate"),
-    dueDay: formData.get("dueDay"),
-    note: formData.get("note"),
-  };
-  closeMovementDialog();
-  openMovementDialog();
-  // Rellenar después de abrir limpio.
-  const kind = draft.kind === "income" ? "income" : "expense";
-  [...dom.movementForm.elements.kind].forEach((input) => {
-    input.checked = input.value === kind;
-  });
-  if (draft.name) dom.movementForm.elements.name.value = draft.name;
-  setSelectValue(dom.movementForm.elements.category, draft.category || state.categories[0] || "Otros");
-  setSelectValue(dom.movementForm.elements.person, draft.person || state.people[0]?.name || "Compartido");
-  if (draft.amount !== null && draft.amount !== undefined && draft.amount !== "") {
-    dom.movementForm.elements.amount.value = draft.amount;
-  }
-  dom.movementForm.elements.startMonth.value = state.activeMonth;
-  dom.movementForm.elements.scheduleType.value = draft.scheduleType;
-  dom.movementForm.elements.installments.value = draft.installments;
-  dom.movementForm.elements.endMonth.value = "";
-  if (dom.movementForm.elements.dueDate) {
-    dom.movementForm.elements.dueDate.value = draft.dueDate
-      || (draft.dueDay ? clampDateToMonth(state.activeMonth, draft.dueDay) : "");
-  } else if (dom.movementForm.elements.dueDay) {
-    dom.movementForm.elements.dueDay.value = draft.dueDay || "";
-  }
-  dom.movementForm.elements.note.value = draft.note || "";
-  dom.editScopeField.hidden = true;
-  if (dom.duplicateMovementBtn) dom.duplicateMovementBtn.hidden = true;
-  if (dom.deleteMovementBtn) dom.deleteMovementBtn.hidden = true;
-  dom.movementDialogTitle.textContent = "Duplicar movimiento";
-  updateScheduleFields();
-  showToast("Revisá y guardá la copia (queda como movimiento nuevo)");
-  requestAnimationFrame(() => dom.movementForm.elements.name?.focus?.());
-}
-
-function openPlannedConfirm(id) {
-  const item = (state.plannedItems || []).find((entry) => entry.id === id);
-  if (!item || !dom.plannedConfirmDialog || !dom.plannedConfirmForm) return;
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de confirmar un previsto")) return;
-  if (plannedStatusForMonth(item, state.activeMonth) !== "open") {
-    showToast("Este previsto ya se resolvió para el mes");
-    return;
-  }
-  dom.plannedConfirmForm.elements.id.value = item.id;
-  dom.plannedConfirmForm.elements.amount.value = fromCents(item.amountCents);
-  if (dom.plannedConfirmTitle) {
-    dom.plannedConfirmTitle.textContent = item.kind === "income"
-      ? `¿Se cobró «${item.name}»?`
-      : `¿Se pagó «${item.name}»?`;
-  }
-  if (dom.plannedConfirmCopy) {
-    dom.plannedConfirmCopy.textContent =
-      `Monto esperado: ${formatCurrency(item.amountCents)}. Si cambió, editalo abajo y confirmá.`;
-  }
-  dom.plannedConfirmDialog.showModal();
-  window.setTimeout(() => dom.plannedConfirmForm.elements.amount.focus(), 40);
-}
-
-async function confirmPlannedItem(event) {
-  event.preventDefault();
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de confirmar un previsto")) return;
-  const formData = new FormData(dom.plannedConfirmForm);
-  const id = sanitizeText(formData.get("id"));
-  const amountCents = toCents(formData.get("amount"));
-  const item = (state.plannedItems || []).find((entry) => entry.id === id);
-  if (!item || amountCents <= 0) {
-    showToast("Monto inválido");
-    return;
-  }
-  if (plannedStatusForMonth(item, state.activeMonth) !== "open") {
-    showToast("Este previsto ya se resolvió para el mes");
-    return;
-  }
-
-  const previousState = cloneState(state);
-  const transaction = normalizeTransaction({
-    id: createId(),
-    kind: item.kind,
-    name: item.name,
-    category: item.category,
-    person: item.person,
-    amountCents,
-    scheduleType: "one-time",
-    startMonth: state.activeMonth,
-    dueDay: item.dueDay,
-    note: item.note ? `Desde previsto · ${item.note}` : "Desde previsto",
-  });
-  if (!transaction) {
-    showToast("No se pudo crear el movimiento");
-    return;
-  }
-  state.transactions.push(transaction);
-  const statusKey = `${transaction.id}:${state.activeMonth}`;
-  const occurrence = occurrenceForMonth(transaction, state.activeMonth, {});
-  if (occurrence) {
-    state.occurrences[statusKey] = materializeOccurrence(occurrence, {
-      status: "paid",
-      actualAmountCents: amountCents,
-      effectiveDate: localDateKey(),
-    });
-  }
-  const planIndex = state.plannedItems.findIndex((entry) => entry.id === id);
-  if (planIndex >= 0) {
-    const next = { ...state.plannedItems[planIndex] };
-    next.fulfilledMonths = [...new Set([...(next.fulfilledMonths || []), state.activeMonth])];
-    next.dismissedMonths = (next.dismissedMonths || []).filter((month) => month !== state.activeMonth);
-    // One-shot: remove after confirm. Monthly: keep for next months.
-    if (next.recurrence === "once") {
-      state.plannedItems.splice(planIndex, 1);
-    } else {
-      state.plannedItems[planIndex] = next;
-    }
-  }
-
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.plannedConfirmDialog.close();
-  render();
-  showToast(
-    item.kind === "income" ? "Ingreso incorporado a Movimientos" : "Gasto incorporado a Movimientos",
-    {
-      label: "Ver",
-      handler: () => {
-        switchView("movements");
-        openMovementDialog(transaction.id, state.activeMonth);
-      },
-    },
-  );
-}
-
-async function dismissPlannedItem() {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de resolver un previsto")) return;
-  const id = sanitizeText(dom.plannedConfirmForm?.elements?.id?.value);
-  const item = (state.plannedItems || []).find((entry) => entry.id === id);
-  if (!item) return;
-  const confirmed = await confirmAction({
-    title: "Marcar como no cumplido",
-    copy: `«${item.name}» no se incorporará a Movimientos este mes.`,
-    confirmLabel: "No se cumplió",
-    danger: true,
-  });
-  if (!confirmed) return;
-  const previousState = cloneState(state);
-  const index = state.plannedItems.findIndex((entry) => entry.id === id);
-  if (index < 0) return;
-  const next = { ...state.plannedItems[index] };
-  next.dismissedMonths = [...new Set([...(next.dismissedMonths || []), state.activeMonth])];
-  next.fulfilledMonths = (next.fulfilledMonths || []).filter((month) => month !== state.activeMonth);
-  if (next.recurrence === "once") {
-    state.plannedItems.splice(index, 1);
-  } else {
-    state.plannedItems[index] = next;
-  }
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  dom.plannedConfirmDialog?.close();
-  render();
-  showToast("Previsto marcado como no cumplido");
-}
+const {
+  renderPlanned,
+  updatePlannedFormFields,
+  openPlannedDialog,
+  openPlannedConfirm,
+  savePlannedItem,
+  deletePlannedItem,
+  confirmPlannedItem,
+  dismissPlannedItem,
+  duplicateMovementFromDialog,
+} = plannedUi;
 
 function render() {
   // Con el form de movimiento abierto no re-renderizar listas (evita lag y doble tipeo).
@@ -5443,7 +3004,7 @@ function render() {
 
 function switchView(view) {
   if (!["dashboard", "movements", "planned", "cards", "projection", "settings"].includes(view)) return;
-  if (view !== "cards") selectedCardId = "";
+  if (view !== "cards") cardsUi.setSelectedCardId("");
   state.activeView = view;
   document.querySelectorAll("[data-view-panel]").forEach((panel) => {
     const active = panel.dataset.viewPanel === view;
@@ -5491,529 +3052,54 @@ async function saveSettlement(event) {
   if (dom.settlementDialog?.open) dom.settlementDialog.close();
 }
 
-function validateScheduleRange({ report = false } = {}) {
-  const form = dom.movementForm.elements;
-  const isMonthly = form.scheduleType.value === "monthly";
-  const startMonth = form.startMonth.value;
-  const endMonth = form.endMonth.value;
-  form.endMonth.min = startMonth;
-  const valid = !isMonthly || isEndMonthValid(startMonth, endMonth);
-  form.endMonth.setCustomValidity(valid ? "" : "El mes final no puede ser anterior al mes de inicio.");
-  if (!valid && report) form.endMonth.reportValidity();
-  return valid;
-}
 
-function updateScheduleFields() {
-  const type = dom.movementForm.elements.scheduleType.value;
-  const isInstallment = type === "installment";
-  const isMonthly = type === "monthly";
-  dom.installmentsField.hidden = !isInstallment;
-  dom.endMonthField.hidden = !isMonthly;
-  dom.movementForm.elements.installments.required = isInstallment;
-  dom.movementForm.elements.installments.disabled = !isInstallment;
-  dom.movementForm.elements.endMonth.disabled = !isMonthly;
-  dom.amountLabel.textContent = isInstallment ? "Monto total" : "Monto";
-
-  if (isInstallment) {
-    const totalCents = toCents(dom.movementForm.elements.amount.value);
-    const count = Number(dom.movementForm.elements.installments.value) || 2;
-    const editingId = sanitizeText(dom.movementForm.elements.id?.value);
-    const futureEdit = Boolean(editingId) && dom.movementForm.elements.editScope.value === "future";
-    dom.formHint.textContent = futureEdit
-      ? "El monto y las cuotas formar\u00e1n un plan nuevo desde el mes activo; los meses anteriores conservar\u00e1n sus valores."
-      : totalCents > 0
-        ? `${count} cuotas de aproximadamente ${formatCurrency(Math.round(totalCents / count))}. La \u00faltima se ajusta si hace falta.`
-        : "Ingres\u00e1 el total de la compra, no el valor de cada cuota.";
-  } else if (isMonthly) {
-    dom.formHint.textContent = "Se repetir\u00e1 cada mes hasta la fecha final, o sin l\u00edmite si la dej\u00e1s vac\u00eda.";
-  } else {
-    dom.formHint.textContent = "Aparecer\u00e1 \u00fanicamente en el mes de inicio.";
-  }
-  validateScheduleRange();
-}
-
-/** Prefer the month occurrence override when present so the form matches the list. */
-function buildEditSource(transaction, record, monthKey) {
-  if (!transaction && !record) return null;
-  if (!transaction) {
-    return {
-      id: record.transactionId,
-      kind: record.kind,
-      name: record.name,
-      category: record.category,
-      person: record.person,
-      amountCents: Number.isSafeInteger(record.seriesAmountCents)
-        ? record.seriesAmountCents
-        : record.plannedAmountCents,
-      schedule: {
-        type: record.scheduleType || "one-time",
-        startMonth: record.monthKey || monthKey,
-        endMonth: "",
-        installments: record.installments || 1,
-      },
-      dueDay: record.dueDay,
-      note: record.note,
-    };
-  }
-  if (!record || record.status === "skipped") return transaction;
-
-  const isInstallment = transaction.schedule.type === "installment";
-  return {
-    ...transaction,
-    kind: record.kind === "income" || record.kind === "expense" ? record.kind : transaction.kind,
-    name: sanitizeText(record.name, transaction.name),
-    category: sanitizeText(record.category, transaction.category),
-    person: sanitizeText(record.person, transaction.person),
-    amountCents: isInstallment
-      ? (Number.isSafeInteger(record.seriesAmountCents) ? record.seriesAmountCents : transaction.amountCents)
-      : (Number.isSafeInteger(record.plannedAmountCents) ? record.plannedAmountCents : transaction.amountCents),
-    dueDay: Number.isInteger(record.dueDay) ? record.dueDay : transaction.dueDay,
-    note: record.note == null ? transaction.note : sanitizeText(record.note),
-  };
-}
-
-function openMovementDialog(transactionId = "", monthKey = state.activeMonth) {
-  if (!requireOpenMonth(monthKey, "Reabrí el mes antes de modificar movimientos")) return;
-  const transaction = state.transactions.find((item) => item.id === transactionId);
-  const occurrenceKey = transactionId ? `${transactionId}:${monthKey}` : "";
-  const record = occurrenceKey ? state.occurrences[occurrenceKey] : null;
-  const source = buildEditSource(transaction, record, monthKey);
-  const lastPrefs = loadFormPrefs();
-
-  // Abrir ya: el paint del modal no espera a reconstruir listas.
-  if (!dom.movementDialog.open) dom.movementDialog.showModal();
-
-  // No usar form.reset(): vacía y reescribe todo el DOM de inputs y pelea con el tipeo.
-  const categoryExtra = source?.category ? [source.category] : [];
-  const personExtra = source?.person ? [source.person] : [];
-  fillSelectOptions(dom.movementForm.elements.category, state.categories, {
-    preserve: true,
-    extra: categoryExtra,
-  });
-  fillSelectOptions(
-    dom.movementForm.elements.person,
-    state.people.map((person) => person.name),
-    { preserve: true, extra: personExtra },
-  );
-
-  dom.movementForm.elements.id.value = source?.id || "";
-  dom.movementForm.elements.occurrenceKey.value = source ? occurrenceKey : "";
-  const kind = source?.kind || lastPrefs.kind || "expense";
-  [...dom.movementForm.elements.kind].forEach((input) => {
-    input.checked = input.value === kind;
-  });
-  // Asignar campos en un solo bloque; focus al final.
-  const nameInput = dom.movementForm.elements.name;
-  nameInput.value = source?.name || "";
-  setSelectValue(
-    dom.movementForm.elements.category,
-    source?.category || lastPrefs.category || state.categories[0] || "Otros",
-  );
-  setSelectValue(
-    dom.movementForm.elements.person,
-    source?.person || lastPrefs.person || state.people[0]?.name || "Compartido",
-  );
-  dom.movementForm.elements.amount.value = source ? fromCents(source.amountCents) : "";
-  dom.movementForm.elements.startMonth.value = source?.schedule.startMonth || state.activeMonth;
-  dom.movementForm.elements.scheduleType.value = source?.schedule.type
-    || (!source ? lastPrefs.scheduleType : null)
-    || "one-time";
-  dom.movementForm.elements.installments.value = source?.schedule.installments || 2;
-  dom.movementForm.elements.endMonth.value = source?.schedule.endMonth || "";
-  if (dom.movementForm.elements.dueDate) {
-    const start = source?.schedule?.startMonth || state.activeMonth;
-    dom.movementForm.elements.dueDate.value = source?.dueDate
-      || (source?.dueDay ? clampDateToMonth(start, source.dueDay) : "");
-  } else if (dom.movementForm.elements.dueDay) {
-    dom.movementForm.elements.dueDay.value = source?.dueDay || "";
-  }
-  dom.movementForm.elements.note.value = source?.note || "";
-  const scheduleType = source?.schedule?.type || transaction?.schedule?.type || "one-time";
-  const recurring = Boolean(transaction) && scheduleType !== "one-time";
-  dom.editScopeField.hidden = !recurring;
-  dom.movementForm.elements.editScope.value = "all";
-  dom.movementDialogTitle.textContent = source ? "Editar movimiento" : "Agregar movimiento";
-  dom.deleteMovementBtn.hidden = !source;
-  if (dom.duplicateMovementBtn) dom.duplicateMovementBtn.hidden = !source;
-  updateScheduleFields();
-  renderMovementTemplates();
-  // requestAnimationFrame: un frame después del showModal, sin setTimeout de 40ms.
-  requestAnimationFrame(() => {
-    if (!dom.movementDialog?.open) return;
-    nameInput?.focus?.();
-    if (!source) nameInput?.select?.();
-  });
-}
-
-function closeMovementDialog() {
-  dom.movementDialog.close();
-}
-
-const FORM_PREFS_KEY = "ilara-form-prefs-v1";
-
-function loadFormPrefs() {
-  try {
-    const raw = localStorage.getItem(FORM_PREFS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveFormPrefs(partial) {
-  try {
-    const next = { ...loadFormPrefs(), ...partial };
-    localStorage.setItem(FORM_PREFS_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
-
-function loadViewFilters() {
-  try {
-    const raw = localStorage.getItem(VIEW_FILTERS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveViewFilters(partial) {
-  try {
-    const current = loadViewFilters();
-    const next = { ...current, ...partial };
-    // Merge nested tab objects when provided.
-    if (partial.movements && typeof partial.movements === "object") {
-      next.movements = { ...(current.movements || {}), ...partial.movements };
-    }
-    if (partial.planned && typeof partial.planned === "object") {
-      next.planned = { ...(current.planned || {}), ...partial.planned };
-    }
-    localStorage.setItem(VIEW_FILTERS_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
-}
-
-function applyStoredViewFilters() {
-  const filters = loadViewFilters();
-  const movements = filters.movements || {};
-  if (dom.movementTypeFilter && movements.type) {
-    const allowed = ["all", "income", "expense"];
-    if (allowed.includes(movements.type)) dom.movementTypeFilter.value = movements.type;
-  }
-  if (dom.movementStatusFilter && movements.status) {
-    const allowed = ["all", "pending", "paid"];
-    if (allowed.includes(movements.status)) dom.movementStatusFilter.value = movements.status;
-  }
-  const planned = filters.planned || {};
-  if (dom.plannedTypeFilter && planned.type) {
-    const allowed = ["all", "income", "expense"];
-    if (allowed.includes(planned.type)) dom.plannedTypeFilter.value = planned.type;
-  }
-  if (dom.plannedStatusFilter && planned.status) {
-    const allowed = ["open", "done", "all"];
-    if (allowed.includes(planned.status)) dom.plannedStatusFilter.value = planned.status;
-  }
-}
-
-function persistMovementFilters() {
-  saveViewFilters({
-    movements: {
-      type: dom.movementTypeFilter?.value || "all",
-      status: dom.movementStatusFilter?.value || "all",
-    },
-  });
-}
-
-function persistPlannedFilters() {
-  saveViewFilters({
-    planned: {
-      type: dom.plannedTypeFilter?.value || "all",
-      status: dom.plannedStatusFilter?.value || "open",
-    },
-  });
-}
-
-/** Diálogos de formulario: no se cierran con clic afuera ni Escape (solo × / Cancelar / Guardar). */
-function lockDialogDismiss(dialog) {
-  if (!dialog || dialog.dataset.dismissLocked === "1") return;
-  dialog.dataset.dismissLocked = "1";
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-  });
-}
-
-function applyOccurrenceEdit(occurrenceKey, transaction, existingSeries, monthKey = state.activeMonth) {
-  const originalOccurrence = getMonthTotals(monthKey).occurrences
-    .find((item) => item.statusKey === occurrenceKey) ||
-    (existingSeries
-      ? occurrenceForMonth(existingSeries, monthKey, state.occurrences)
-      : null);
-  const editedOccurrence = occurrenceForEditedTransaction(transaction, monthKey, originalOccurrence);
-  if (!editedOccurrence) return false;
-  const previousRecord = state.occurrences[occurrenceKey];
-  const key = occurrenceKey || `${transaction.id}:${monthKey}`;
-  state.occurrences[key] = materializeOccurrence(editedOccurrence, {
-    status: previousRecord?.status || originalOccurrence?.status || "pending",
-    actualAmountCents: previousRecord?.actualAmountCents ?? originalOccurrence?.actualAmountCents ?? null,
-    effectiveDate: previousRecord?.effectiveDate || originalOccurrence?.effectiveDate || "",
-    kind: transaction.kind,
-    name: transaction.name,
-    category: transaction.category,
-    person: transaction.person,
-    note: transaction.note,
-    dueDay: transaction.dueDay,
-    plannedAmountCents: editedOccurrence.amountThisMonthCents,
-    seriesAmountCents: transaction.amountCents,
-    scheduleType: transaction.schedule.type,
-  });
-  return true;
-}
-
-/** Borra ocurrencias de una serie desde un mes (inclusive), para no dejar huérfanas duplicadas. */
-function clearSeriesOccurrencesFromMonth(transactionId, fromMonth) {
-  Object.entries(state.occurrences || {}).forEach(([key, record]) => {
-    if (record.transactionId !== transactionId) return;
-    if (fromMonth && monthDiff(fromMonth, record.monthKey) < 0) return;
-    delete state.occurrences[key];
-  });
-}
-
-async function saveMovement(event) {
-  event.preventDefault();
-  const formData = new FormData(dom.movementForm);
-  if (!validateScheduleRange({ report: true })) return;
-  // Guardia de mes cerrado: el mes del movimiento y el activo no deben estar cerrados.
-  const formStartMonth = sanitizeText(formData.get("startMonth")) || state.activeMonth;
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de guardar movimientos")) return;
-  if (formStartMonth !== state.activeMonth
-    && !requireOpenMonth(formStartMonth, "Reabrí el mes de inicio antes de guardar")) {
-    return;
-  }
-  const existingId = sanitizeText(formData.get("id"));
-  const existingSeries = existingId
-    ? state.transactions.find((item) => item.id === existingId)
-    : null;
-  const transaction = normalizeTransaction({
-    id: existingSeries?.id || existingId || createId(),
-    kind: formData.get("kind"),
-    name: formData.get("name"),
-    category: formData.get("category"),
-    person: formData.get("person"),
-    amount: formData.get("amount"),
-    scheduleType: formData.get("scheduleType"),
-    startMonth: formData.get("startMonth"),
-    installments: formData.get("installments"),
-    endMonth: formData.get("endMonth"),
-    dueDate: formData.get("dueDate"),
-    dueDay: formData.get("dueDay"),
-    note: formData.get("note"),
-    createdAt: existingSeries?.createdAt,
-  });
-  if (!transaction) return;
-  // Nunca cambiar el id al editar: si no, se crea otra fila.
-  if (existingSeries) transaction.id = existingSeries.id;
-
-  const previousState = cloneState(state);
-  const index = state.transactions.findIndex((item) => item.id === transaction.id);
-  const occurrenceKey = sanitizeText(formData.get("occurrenceKey"))
-    || (existingSeries ? `${existingSeries.id}:${state.activeMonth}` : "");
-  // one-time = siempre la serie completa. Default al editar = all (actualizar, no duplicar).
-  let scope = sanitizeText(formData.get("editScope"), "all");
-  if (existingSeries?.schedule.type === "one-time") scope = "all";
-  if (!existingSeries) scope = "create";
-
-  if (existingSeries && scope === "current") {
-    if (!applyOccurrenceEdit(occurrenceKey, transaction, existingSeries, state.activeMonth)) {
-      state = previousState;
-      showToast("El movimiento no corresponde al mes activo");
-      return;
-    }
-  } else if (existingSeries && scope === "future") {
-    const prevMonth = addMonths(state.activeMonth, -1);
-    const hasPastMonths = monthDiff(existingSeries.schedule.startMonth, state.activeMonth) > 0;
-    if (hasPastMonths) {
-      // Congelar meses anteriores con la serie vieja; desde este mes, serie nueva (mismo concepto).
-      materializeSeriesThrough(existingSeries, prevMonth);
-      preserveProtectedOccurrences(existingSeries);
-      clearSeriesOccurrencesFromMonth(existingSeries.id, state.activeMonth);
-      if (existingSeries.schedule.type === "monthly") {
-        state.transactions[index] = {
-          ...existingSeries,
-          schedule: {
-            ...existingSeries.schedule,
-            endMonth: prevMonth,
-          },
-        };
-      } else {
-        // Cuotas: dejamos el pasado materializado y sacamos la serie vieja del listado activo.
-        state.transactions.splice(index, 1);
-      }
-      const nextSeries = {
-        ...transaction,
-        id: createId(),
-        schedule: {
-          ...transaction.schedule,
-          startMonth: state.activeMonth,
-        },
-        createdAt: new Date().toISOString(),
-      };
-      state.transactions.push(nextSeries);
-    } else {
-      // Sin pasado que preservar: es una edición normal de la misma fila.
-      state.transactions[index] = transaction;
-      clearUnprotectedOccurrenceRecords(transaction.id);
-      preserveProtectedOccurrences(transaction);
-      syncOccurrenceLabelsFromSeries(transaction);
-      applyOccurrenceEdit(`${transaction.id}:${state.activeMonth}`, transaction, transaction, state.activeMonth);
-    }
-  } else if (existingSeries) {
-    // Toda la serie / caso normal de editar: actualizar la misma fila.
-    state.transactions[index] = transaction;
-    clearUnprotectedOccurrenceRecords(transaction.id);
-    preserveProtectedOccurrences(transaction);
-    syncOccurrenceLabelsFromSeries(transaction);
-    // Asegurar que el mes activo refleje el form (aunque no hubiera registro previo).
-    applyOccurrenceEdit(`${transaction.id}:${state.activeMonth}`, transaction, transaction, state.activeMonth);
-  } else if (occurrenceKey && state.occurrences[occurrenceKey]) {
-    if (!applyOccurrenceEdit(occurrenceKey, transaction, null, state.activeMonth)) {
-      state = previousState;
-      showToast("El movimiento no corresponde al mes activo");
-      return;
-    }
-  } else {
-    // Alta nueva (sin id de serie): queda cobrado/pagado de una (si no se cumplió → Previstos).
-    state.transactions.push(transaction);
-    const paidMonth = isValidMonthKey(transaction.schedule?.startMonth)
-      ? transaction.schedule.startMonth
-      : state.activeMonth;
-    const occurrence = occurrenceForMonth(transaction, paidMonth, {});
-    if (occurrence) {
-      state.occurrences[`${transaction.id}:${paidMonth}`] = materializeOccurrence(occurrence, {
-        status: "paid",
-        actualAmountCents: occurrence.amountThisMonthCents,
-        effectiveDate: localDateKey(),
-      });
-    }
-  }
-
-  const personName = transaction.person;
-  if (!state.people.some((person) => person.name.toLocaleLowerCase("es") === personName.toLocaleLowerCase("es"))) {
-    state.people.push({ id: createId(), name: personName });
-  }
-  if (!state.categories.some((category) =>
-    category.localeCompare(transaction.category, "es", { sensitivity: "base" }) === 0
-  )) {
-    state.categories.push(transaction.category);
-    state.categories.sort((a, b) => a.localeCompare(b, "es"));
-  }
-
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  saveFormPrefs({
-    category: transaction.category,
-    person: transaction.person,
-    scheduleType: transaction.schedule?.type || "one-time",
-    kind: transaction.kind,
-  });
-  closeMovementDialog();
-  render();
-  showToast(
-    existingId
-      ? "Movimiento actualizado"
-      : (transaction.kind === "income" ? "Ingreso cargado y cobrado" : "Gasto cargado y pagado"),
-  );
-}
-
-async function deleteMovement() {
-  if (!requireOpenMonth(state.activeMonth, "Reabrí el mes antes de eliminar movimientos")) return;
-  const id = dom.movementForm.elements.id.value;
-  if (!id) return;
-  const index = state.transactions.findIndex((item) => item.id === id);
-  const transaction = state.transactions[index];
-  const occurrenceKey = dom.movementForm.elements.occurrenceKey.value;
-  const record = state.occurrences[occurrenceKey];
-  if (!transaction && !record) return;
-  const requestedScope = dom.movementForm.elements.editScope.value || "current";
-  const scope = transaction?.schedule.type === "one-time" ? "all" : requestedScope;
-  const name = transaction?.name || record.name;
-  const scopeCopy = scope === "current"
-    ? "Sólo se excluirá del mes activo."
-    : scope === "future"
-      ? "Se conservarán los meses anteriores y se eliminará desde el mes activo."
-      : "Se eliminará la serie, conservando únicamente meses pagados o cerrados.";
-
-  closeMovementDialog();
-  const confirmed = await confirmAction({
-    title: "Eliminar movimiento",
-    copy: `¿Querés eliminar “${name}”? ${scopeCopy}`,
-    confirmLabel: "Eliminar",
-    danger: true,
-  });
-  if (!confirmed) {
-    openMovementDialog(id, record?.monthKey || state.activeMonth);
-    return;
-  }
-
-  const previousState = cloneState(state);
-  if (!transaction) {
-    delete state.occurrences[occurrenceKey];
-  } else if (scope === "current") {
-    const occurrence = occurrenceForMonth(transaction, state.activeMonth, state.occurrences);
-    if (!occurrence) {
-      showToast("No hay movimiento para excluir en este mes");
-      openMovementDialog(id, state.activeMonth);
-      return;
-    }
-    if (occurrence.status === "paid") {
-      showToast("Desmarcá el pago o cobro antes de excluir este mes");
-      openMovementDialog(id, state.activeMonth);
-      return;
-    }
-    state.occurrences[occurrence.statusKey] = materializeOccurrence(occurrence, {
-      status: "skipped",
-      actualAmountCents: null,
-      effectiveDate: "",
-    });
-  } else if (scope === "future") {
-    materializeSeriesThrough(transaction, addMonths(state.activeMonth, -1));
-    preserveProtectedOccurrences(transaction);
-    clearUnprotectedOccurrenceRecords(transaction.id, state.activeMonth);
-    state.transactions = state.transactions.filter((item) => item.id !== id);
-  } else {
-    preserveProtectedOccurrences(transaction);
-    clearUnprotectedOccurrenceRecords(transaction.id);
-    state.transactions = state.transactions.filter((item) => item.id !== id);
-  }
-  if (!await saveState()) {
-    state = previousState;
-    render();
-    return;
-  }
-  render();
-  showToast("Movimiento eliminado", {
-    label: "Deshacer",
-    handler: async () => {
-      const beforeRestore = cloneState(state);
-      state = previousState;
-      if (!await saveState()) {
-        state = beforeRestore;
-        render();
-        return;
-      }
-      render();
-      showToast("Movimiento restaurado");
-    },
-  });
-}
+// --- Movimientos form (módulo) ---
+const movementsUi = createMovementsUi({
+  getState: () => state,
+  setState: (next) => { state = next; },
+  get dom() { return dom; },
+  element,
+  formatCurrency,
+  formatMonthLabel,
+  isValidIsoDate,
+  clampDateToMonth,
+  normalizeTransaction,
+  materializeOccurrence,
+  occurrenceForMonth,
+  occurrenceForEditedTransaction,
+  materializeSeriesThrough,
+  preserveProtectedOccurrences,
+  clearUnprotectedOccurrenceRecords,
+  syncOccurrenceLabelsFromSeries,
+  localDateKey,
+  cloneState,
+  saveState,
+  render: (...args) => render(...args),
+  showToast,
+  confirmAction,
+  requireOpenMonth,
+  fillSelectOptions,
+  setSelectValue,
+  sanitizeText,
+  createId,
+  getMonthTotals,
+  renderMovementTemplates: (...args) => renderMovementTemplates(...args),
+});
+const {
+  validateScheduleRange,
+  updateScheduleFields,
+  openMovementDialog,
+  closeMovementDialog,
+  loadFormPrefs,
+  saveFormPrefs,
+  applyStoredViewFilters,
+  persistMovementFilters,
+  persistPlannedFilters,
+  lockDialogDismiss,
+  applyOccurrenceEdit,
+  saveMovement,
+  deleteMovement,
+} = movementsUi;
 
 async function removePerson(personId) {
   const person = state.people.find((item) => item.id === personId);
@@ -6343,14 +3429,11 @@ dom.movementSearch?.addEventListener("input", renderMovements);
 );
 dom.exportMonthCsvBtn?.addEventListener("click", () => exportCsvThisMonth());
 dom.projectionIncludeCards?.addEventListener("change", () => {
-  projectionUi.includeCards = Boolean(dom.projectionIncludeCards.checked);
+  setProjectionIncludeCards(dom.projectionIncludeCards.checked);
   renderProjection();
 });
 dom.projectionIncomeCut?.addEventListener("change", () => {
-  projectionUi.incomeCutPercent = Math.min(
-    90,
-    Math.max(0, Number(dom.projectionIncomeCut.value) || 0),
-  );
+  setProjectionIncomeCutPercent(dom.projectionIncomeCut.value);
   renderProjection();
 });
 dom.projectionMonthsSelect.addEventListener("change", (event) => {
@@ -6551,7 +3634,7 @@ dom.purchaseForm?.addEventListener("submit", saveCardPurchase);
 dom.dashboardCardPurchaseBtn?.addEventListener("click", () => openPurchaseDialog());
 dom.dashboardCardPurchaseBtnTop?.addEventListener("click", () => openPurchaseDialog());
 dom.cardsBackBtn?.addEventListener("click", () => {
-  selectedCardId = "";
+  cardsUi.setSelectedCardId("");
   renderCards();
 });
 ["amountMode", "totalAmount", "cuotaAmount", "installments", "currency"].forEach((name) => {
@@ -6746,12 +3829,12 @@ async function initializeApp() {
   void refreshUsdRate();
   // Updates: consulta silenciosa al abrir (banner si hay versión nueva).
   void checkForAppUpdates({ interactive: false });
-  // Google Drive: estado + pull automático si hay copia más nueva.
+  // Google Drive: solo estado al abrir.
+  // No bajar ni subir solos al inicio (evita pisar datos con una PC vacía).
+  // Subida en segundo plano solo si el usuario activó «Subir cambios solos».
   await refreshDriveStatus();
-  if (driveStatus?.connected && driveStatus?.autoSync) {
-    void runDrivePull({ force: false, interactive: false }).then(() => {
-      if (driveStatus?.localDirty) scheduleDrivePush();
-    });
+  if (driveStatus?.connected && driveStatus?.autoSync && driveStatus?.localDirty) {
+    scheduleDrivePush();
   }
 }
 

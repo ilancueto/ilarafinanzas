@@ -404,7 +404,7 @@
                 <button id="profilePruebaBtn" class="secondary-btn" type="button">Perfil de prueba</button>
                 <button id="profileResetPruebaBtn" class="danger-btn" type="button">Vaciar prueba</button>
               </div>
-              <p class="form-hint">Drive solo sube/baja el perfil <strong>Hogar</strong>. En prueba no se sincroniza a la nube.</p>
+              <p class="form-hint">Drive solo opera en el perfil <strong>Hogar</strong> (Guardar / Cargar). En prueba no se toca la nube.</p>
             </article>
 
             <article class="panel">
@@ -486,7 +486,11 @@
               <div class="panel-heading">
                 <p class="eyebrow">Nube</p>
                 <h2>Google Drive</h2>
-                <p>Conectá una vez y la app sube/baja sola la última copia entre tus PCs. Sin pendrive ni copiar archivos.</p>
+                <p>
+                  Dos acciones separadas (nunca se mezclan solas):
+                  <strong>Guardar</strong> sube esta PC a Drive;
+                  <strong>Cargar</strong> baja Drive y reemplaza esta PC (con respaldo previo).
+                </p>
               </div>
               <div id="driveSetupBlock" class="drive-setup">
                 <p class="form-hint">Una sola vez: creá un cliente OAuth “Escritorio” en Google Cloud, activá Drive API y pegá acá Client ID y Secret. Guía en README (sección Drive).</p>
@@ -505,13 +509,18 @@
               <div class="drive-status-row">
                 <p id="driveStatusText" class="drive-status" data-tone="neutral">Drive no configurado.</p>
                 <label class="drive-auto-toggle">
-                  <input id="driveAutoSyncToggle" type="checkbox" checked />
-                  <span>Sync automática</span>
+                  <input id="driveAutoSyncToggle" type="checkbox" />
+                  <span>Subir cambios solos</span>
                 </label>
               </div>
+              <p class="form-hint">
+                «Subir cambios solos» solo hace <strong>Guardar</strong> en segundo plano. Nunca baja ni pisa esta PC.
+                En una PC nueva o vacía: primero <strong>Cargar</strong>, no Guardar.
+              </p>
               <div class="data-actions">
                 <button id="driveConnectBtn" class="primary-btn" type="button">Conectar Google</button>
-                <button id="driveSyncNowBtn" class="secondary-btn" type="button">Sincronizar ahora</button>
+                <button id="drivePushBtn" class="primary-btn" type="button" title="Sube la copia de esta PC a Drive">Guardar en Drive</button>
+                <button id="drivePullBtn" class="secondary-btn" type="button" title="Baja la copia de Drive y la aplica acá">Cargar de Drive</button>
                 <button id="driveDisconnectBtn" class="secondary-btn" type="button">Desconectar</button>
               </div>
             </article>

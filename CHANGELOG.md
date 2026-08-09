@@ -1,5 +1,15 @@
 # Historial de cambios
 
+## 3.9.9.14 — Estable — 2026-08-09
+
+### Drive (seguridad)
+- Se elimina el botón único «Sincronizar ahora» (pull+push en un clic).
+- **Guardar en Drive**: solo sube esta PC (con aviso extra si está vacía).
+- **Cargar de Drive**: solo baja y aplica (siempre con confirmación y respaldo «antes-de-drive»).
+- Al conectar Google ya no se sube ni baja solo: hay que elegir Guardar o Cargar.
+- Al abrir la app no se aplica Drive a ciegas; la opción automática solo **sube** si hay cambios locales.
+- Textos más claros: «Subir cambios solos» (nunca baja).
+
 ## 3.9.9.13 — Estable — 2026-08-08
 
 ### Visual — Soft Noir
