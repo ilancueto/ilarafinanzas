@@ -1,5 +1,24 @@
 # Historial de cambios
 
+## 3.9.9.18 — Estable — 2026-08-09
+
+### Visual / UX
+- **Ajustes** rediseñado: preferencias sobrias con secciones **Hogar · Datos · Cuenta**.
+- **Tarjetas y Proyección**: copy más seco (sin “plásticos” / textos de más); switch compacto para incluir tarjetas.
+- **Sidebar**: sin claim “offline”; subtítulo = perfil (Hogar / Prueba).
+- **Drive**: estado en una línea con punto de color (sin bloque amarillo multi-línea).
+- Filtros de Movimientos/Previstos: contraste legible en WebView2.
+
+### Corregido
+- **Eliminar movimiento**: ahora borra también ocurrencias ya marcadas como pagadas (los altas se guardan paid).
+- **Previstos → + Previsto**: el diálogo no fallaba al escribir un `monthKey` que no existe en el form.
+- **Duplicar**: deja los datos del form y limpia el id (sin vaciar al reabrir el dialog).
+- **Dólar**: cotización de red solo **oficial** (venta), no blue.
+- **Toast** por encima de los dialogs (popover top-layer), p. ej. límite de tarjeta.
+
+### Datos
+- Historial de backups como **selector** + Restaurar / Descargar (caché del perfil).
+
 ## 3.9.9.17 — Estable — 2026-08-09
 
 ### Corregido
