@@ -71,7 +71,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.15";
+const APP_VERSION = "3.9.9.16";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -2885,6 +2885,7 @@ const cardsUi = createCardsUi({
   formatMonthLabel,
   formatIsoDateLabel,
   formatFxRate,
+  formatCurrency,
   isValidIsoDate,
   daysUntilIsoDate,
   effectiveUsdArs,
@@ -2906,6 +2907,7 @@ const cardsUi = createCardsUi({
   setSelectValue,
   sanitizeText,
   createId,
+  getMonthTotals,
 });
 
 const {

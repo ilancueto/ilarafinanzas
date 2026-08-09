@@ -19,7 +19,7 @@ import {
   wouldExceedCardLimit,
 } from "./cards-core.js";
 import { fromCents, toCents } from "./state-core.js";
-import { isValidMonthKey } from "./finance-core.js";
+import { addMonths, isValidMonthKey } from "./finance-core.js";
 
 export function createCardsUi(api) {
   const getState = () => api.getState();
@@ -32,6 +32,7 @@ export function createCardsUi(api) {
     formatMonthLabel,
     formatIsoDateLabel,
     formatFxRate,
+    formatCurrency,
     isValidIsoDate,
     daysUntilIsoDate,
     effectiveUsdArs,
@@ -53,6 +54,7 @@ export function createCardsUi(api) {
     setSelectValue,
     sanitizeText,
     createId,
+    getMonthTotals,
   } = api;
 
   let selectedCardId = "";
@@ -729,7 +731,7 @@ async function saveCreditCard(event) {
       || formData.get("excludeFromCardTotals") === "true",
   });
   if (!card) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   const index = getState().creditCards.findIndex((item) => item.id === card.id);
   if (index >= 0) getState().creditCards[index] = card;
   else getState().creditCards.push(card);
@@ -798,7 +800,7 @@ async function generateCardStatement(cardId) {
     getState().categories.push("Tarjeta de crédito");
     getState().categories.sort((a, b) => a.localeCompare(b, "es"));
   }
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().transactions.push(transaction);
   const occurrence = occurrenceForMonth(transaction, getState().activeMonth, {});
   if (occurrence) {
@@ -869,7 +871,7 @@ async function saveCardCharge(event) {
     );
     return;
   }
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().cardCharges.push(charge);
   if (!await saveState()) {
     setState(previousState);
@@ -923,7 +925,7 @@ async function saveCardPurchase(event) {
     );
     return;
   }
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().cardCharges.push(charge);
   if (!await saveState()) {
     setState(previousState);
@@ -948,7 +950,7 @@ async function removeCreditCard(cardId) {
     danger: true,
   });
   if (!confirmed) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().creditCards = getState().creditCards.filter((item) => item.id !== cardId);
   getState().cardCharges = getState().cardCharges.filter((item) => item.cardId !== cardId);
   if (!await saveState()) {
@@ -961,7 +963,7 @@ async function removeCreditCard(cardId) {
   showToast("Tarjeta eliminada", {
     label: "Deshacer",
     handler: async () => {
-      const before = cloneState(state);
+      const before = cloneState(getState());
       setState(previousState);
       if (!await saveState()) {
         setState(before);
@@ -980,7 +982,7 @@ async function removeCardCharge(chargeId) {
     ? (charge.monthKey || getState().activeMonth)
     : getState().activeMonth;
   if (!requireOpenMonth(guardMonth, "Reabrí el mes antes de eliminar un cargo")) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().cardCharges = getState().cardCharges.filter((item) => item.id !== chargeId);
   if (!await saveState()) {
     setState(previousState);
@@ -991,7 +993,7 @@ async function removeCardCharge(chargeId) {
   showToast("Cargo eliminado", {
     label: "Deshacer",
     handler: async () => {
-      const before = cloneState(state);
+      const before = cloneState(getState());
       setState(previousState);
       if (!await saveState()) {
         setState(before);
@@ -1040,7 +1042,7 @@ async function copyFromPreviousMonth() {
     confirmLabel: "Copiar",
   });
   if (!confirmed) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   toCopy.forEach((source) => {
     const transaction = normalizeTransaction({
       ...source,
@@ -1071,7 +1073,7 @@ async function copyFromPreviousMonth() {
   showToast(`${toCopy.length} movimiento${toCopy.length === 1 ? "" : "s"} copiado${toCopy.length === 1 ? "" : "s"}`, {
     label: "Deshacer",
     handler: async () => {
-      const before = cloneState(state);
+      const before = cloneState(getState());
       setState(previousState);
       if (!await saveState()) {
         setState(before);
@@ -1143,7 +1145,7 @@ async function markCardCuotaPaid(chargeId) {
   const charge = getState().cardCharges.find((item) => item.id === chargeId);
   if (!charge || charge.chargeType !== "installment") return;
   if (charge.paidInstallments >= charge.installments) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   charge.paidInstallments += 1;
   if (!await saveState()) {
     setState(previousState);
@@ -1158,7 +1160,7 @@ async function unmarkCardCuotaPaid(chargeId) {
   if (!requireOpenMonth(getState().activeMonth, "Reabrí el mes antes de desmarcar cuotas")) return;
   const charge = getState().cardCharges.find((item) => item.id === chargeId);
   if (!charge || charge.chargeType !== "installment" || charge.paidInstallments <= 0) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   charge.paidInstallments -= 1;
   if (!await saveState()) {
     setState(previousState);
@@ -1199,7 +1201,7 @@ async function refreshUsdRate() {
         : new Date().toLocaleString("es-AR");
     }
     if (!Number.isFinite(rate) || rate <= 0) throw new Error("cotización inválida");
-    const previousState = cloneState(state);
+    const previousState = cloneState(getState());
     getState().fx.apiUsdArs = rate;
     getState().fx.apiLabel = label;
     getState().fx.apiUpdatedAt = updated;
@@ -1224,7 +1226,7 @@ async function applyManualFx() {
     showToast("Ingresá un tipo de cambio válido");
     return;
   }
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().fx.useManual = Boolean(getDom().fxUseManual?.checked);
   getState().fx.manualUsdArs = rate;
   getState().fx.usdArs = rate;

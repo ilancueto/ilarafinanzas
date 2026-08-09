@@ -269,7 +269,7 @@ async function savePlannedItem(event) {
     showToast("Revisá concepto, fecha y monto del previsto");
     return;
   }
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   if (!Array.isArray(getState().plannedItems)) getState().plannedItems = [];
   const index = getState().plannedItems.findIndex((entry) => entry.id === item.id);
   if (index >= 0) getState().plannedItems[index] = item;
@@ -310,7 +310,7 @@ async function deletePlannedItem() {
     danger: true,
   });
   if (!confirmed) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   getState().plannedItems = (getState().plannedItems || []).filter((item) => item.id !== id);
   if (!await saveState()) {
     setState(previousState);
@@ -322,7 +322,7 @@ async function deletePlannedItem() {
   showToast("Previsto eliminado", {
     label: "Deshacer",
     handler: async () => {
-      const before = cloneState(state);
+      const before = cloneState(getState());
       setState(previousState);
       if (!await saveState()) {
         setState(before);
@@ -425,7 +425,7 @@ async function confirmPlannedItem(event) {
     return;
   }
 
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   const transaction = normalizeTransaction({
     id: createId(),
     kind: item.kind,
@@ -496,7 +496,7 @@ async function dismissPlannedItem() {
     danger: true,
   });
   if (!confirmed) return;
-  const previousState = cloneState(state);
+  const previousState = cloneState(getState());
   const index = getState().plannedItems.findIndex((entry) => entry.id === id);
   if (index < 0) return;
   const next = { ...getState().plannedItems[index] };

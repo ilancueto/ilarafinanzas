@@ -1,5 +1,11 @@
 # Historial de cambios
 
+## 3.9.9.16 — Estable — 2026-08-09
+
+### Corregido
+- **Modularización**: en `cards-ui` y `planned-ui` quedaron `cloneState(state)` con `state` indefinido → fallaba el dólar (`refreshUsdRate`), guardar cargos/previstos y parte del render.
+- Se inyectan `formatCurrency` y `getMonthTotals` en tarjetas; `addMonths` se importa desde finance-core.
+
 ## 3.9.9.15 — Estable — 2026-08-09
 
 ### Corregido
