@@ -8,6 +8,7 @@ import {
   plannedStatusForMonth,
   countPlannedOutsideMonth as countPlannedOutsideMonthCore,
 } from "./planned-core.js";
+import { withSubmitLock } from "./ui-core.js";
 
 export function createPlannedUi(api) {
   const getState = () => api.getState();
@@ -229,6 +230,10 @@ function openPlannedDialog(id = "") {
 
 async function savePlannedItem(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().plannedForm, savePlannedItemLocked);
+}
+
+async function savePlannedItemLocked() {
   if (!getDom().plannedForm) return;
   const formData = new FormData(getDom().plannedForm);
   const existingId = sanitizeText(formData.get("id"));
@@ -384,6 +389,10 @@ function openPlannedConfirm(id) {
 
 async function confirmPlannedItem(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().plannedConfirmForm, confirmPlannedItemLocked);
+}
+
+async function confirmPlannedItemLocked() {
   if (!requireOpenMonth(getState().activeMonth, "Reabrí el mes antes de confirmar un previsto")) return;
   const formData = new FormData(getDom().plannedConfirmForm);
   const id = sanitizeText(formData.get("id"));

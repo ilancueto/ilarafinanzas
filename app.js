@@ -49,6 +49,7 @@ import { createPlannedUi } from "./planned-ui.js";
 import { createProjectionUi } from "./projection-ui.js";
 import { createHomeUi } from "./home-ui.js";
 import { createMovementsUi } from "./movements-ui.js";
+import { withSubmitLock } from "./ui-core.js";
 import {
   driveConfirmPulled,
   driveConnect,
@@ -3155,7 +3156,9 @@ function switchView(view) {
   history.replaceState(null, "", `#${view}`);
   const scroller = document.querySelector("#contentScroll");
   if (scroller) scroller.scrollTop = 0;
-  void saveState();
+  // La vista activa es una preferencia local: navegar no debe marcar Drive
+  // como pendiente ni programar una subida al iniciar la app.
+  void saveState({ skipDriveSchedule: true });
 }
 
 async function toggleOccurrenceStatus(item) {
@@ -3218,7 +3221,6 @@ const movementsUi = createMovementsUi({
   sanitizeText,
   createId,
   getMonthTotals,
-  renderMovementTemplates: (...args) => renderMovementTemplates(...args),
 });
 const {
   validateScheduleRange,
@@ -3554,13 +3556,13 @@ dom.prevMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, -1);
   resetBreakdownExpanded?.();
   render();
-  void saveState();
+  void saveState({ skipDriveSchedule: true });
 });
 dom.nextMonthBtn.addEventListener("click", () => {
   state.activeMonth = addMonths(state.activeMonth, 1);
   resetBreakdownExpanded?.();
   render();
-  void saveState();
+  void saveState({ skipDriveSchedule: true });
 });
 dom.monthPickerBtn.addEventListener("click", openMonthPicker);
 dom.activeMonthInput.addEventListener("change", (event) => {
@@ -3569,7 +3571,7 @@ dom.activeMonthInput.addEventListener("change", (event) => {
   state.activeMonth = event.target.value;
   resetBreakdownExpanded?.();
   render();
-  void saveState();
+  void saveState({ skipDriveSchedule: true });
 });
 
 dom.movementSearch?.addEventListener("input", renderMovements);
@@ -3592,7 +3594,7 @@ dom.projectionMonthsSelect.addEventListener("change", (event) => {
   state.settings.projectionMonths = Number(event.target.value);
   renderProjection();
   renderSettings();
-  void saveState();
+  void saveState({ skipDriveSchedule: true });
 });
 
 dom.movementForm.addEventListener("submit", saveMovement);
@@ -3629,8 +3631,12 @@ dom.movementDialog?.addEventListener("keydown", (event) => {
   else dom.movementForm?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
 });
 
-dom.personForm.addEventListener("submit", async (event) => {
+dom.personForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  void withSubmitLock(dom.personForm, savePerson);
+});
+
+async function savePerson() {
   const name = sanitizeText(new FormData(dom.personForm).get("name"));
   if (!name) return;
   if (state.people.some((person) => person.name.toLocaleLowerCase("es") === name.toLocaleLowerCase("es"))) {
@@ -3647,10 +3653,14 @@ dom.personForm.addEventListener("submit", async (event) => {
   dom.personForm.reset();
   render();
   showToast("Persona agregada");
+}
+
+dom.categoryForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void withSubmitLock(dom.categoryForm, saveCategory);
 });
 
-dom.categoryForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+async function saveCategory() {
   const name = sanitizeText(new FormData(dom.categoryForm).get("name"));
   if (!name) return;
   if (state.categories.some((category) =>
@@ -3669,10 +3679,14 @@ dom.categoryForm.addEventListener("submit", async (event) => {
   }
   render();
   showToast("Categoría agregada");
+}
+
+dom.budgetForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void withSubmitLock(dom.budgetForm, saveBudget);
 });
 
-dom.budgetForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+async function saveBudget() {
   const formData = new FormData(dom.budgetForm);
   const monthKey = sanitizeText(formData.get("monthKey"));
   const category = sanitizeText(formData.get("category"));
@@ -3701,10 +3715,14 @@ dom.budgetForm.addEventListener("submit", async (event) => {
   dom.budgetForm.reset();
   render();
   showToast(existing ? "Presupuesto actualizado" : "Presupuesto agregado");
+}
+
+dom.preferencesForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void withSubmitLock(dom.preferencesForm, savePreferences);
 });
 
-dom.preferencesForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+async function savePreferences() {
   const formData = new FormData(dom.preferencesForm);
   const openingBalanceCents = toCents(formData.get("openingBalance"));
   const openingBalanceMonth = sanitizeText(formData.get("openingBalanceMonth"));
@@ -3723,7 +3741,7 @@ dom.preferencesForm.addEventListener("submit", async (event) => {
   }
   render();
   showToast("Ajustes guardados");
-});
+}
 
 dom.exportBtn.addEventListener("click", exportData);
 dom.exportCsvBtn.addEventListener("click", () => exportCsv());
@@ -3877,12 +3895,12 @@ function handleMenuCommand(command) {
     case "month_prev":
       state.activeMonth = addMonths(state.activeMonth, -1);
       render();
-      void saveState();
+      void saveState({ skipDriveSchedule: true });
       break;
     case "month_next":
       state.activeMonth = addMonths(state.activeMonth, 1);
       render();
-      void saveState();
+      void saveState({ skipDriveSchedule: true });
       break;
     case "month_pick":
       openMonthPicker();

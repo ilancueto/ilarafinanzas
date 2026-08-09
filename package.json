@@ -14,7 +14,7 @@
     "native:clippy": "npm run version:sync && set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "native:fmt": "set \"PATH=%USERPROFILE%\\.cargo\\bin;%PATH%\" && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "test": "node --test --test-isolation=none",
-    "check": "tsc --noEmit && node --check app.js && node --check finance-core.js && node --check state-core.js && node --check cards-core.js && node --check cards-ui.js && node --check planned-core.js && node --check planned-ui.js && node --check projection-ui.js && node --check home-ui.js && node --check movements-ui.js",
+    "check": "tsc --noEmit && node --check app.js && node --check finance-core.js && node --check state-core.js && node --check ui-core.js && node --check cards-core.js && node --check cards-ui.js && node --check planned-core.js && node --check planned-ui.js && node --check projection-ui.js && node --check home-ui.js && node --check movements-ui.js",
     "verify": "npm run version:sync && npm test && npm run check && npm run build && npm run native:fmt && npm run native:test && npm run native:check && npm run native:clippy",
     "release:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1",
     "release:build": "npm run verify && npm run native:build && npm run release:package",

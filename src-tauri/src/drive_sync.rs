@@ -90,6 +90,69 @@ pub struct DrivePushResult {
     pub message: String,
 }
 
+/// A remote copy is safe to overwrite only when it is the exact copy this
+/// device last synchronized.  Timestamps are useful for the UI but are not a
+/// reliable conflict baseline: on a first connection we have no baseline yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PushDecision {
+    Noop,
+    Upload,
+    Conflict,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PullDecision {
+    Noop,
+    Download,
+    LocalAhead,
+    Conflict,
+}
+
+fn decide_push(
+    known_content_hash: &str,
+    remote_hash: &str,
+    local_hash: &str,
+    force: bool,
+) -> PushDecision {
+    if remote_hash == local_hash {
+        return PushDecision::Noop;
+    }
+    if force {
+        return PushDecision::Upload;
+    }
+    // A different remote on the first pairing has no common base.  Treat it
+    // as a conflict rather than guessing that this PC may replace Drive.
+    if known_content_hash.is_empty() || remote_hash != known_content_hash {
+        return PushDecision::Conflict;
+    }
+    PushDecision::Upload
+}
+
+fn decide_pull(
+    known_content_hash: &str,
+    remote_hash: &str,
+    local_dirty: bool,
+    force: bool,
+) -> PullDecision {
+    if force || known_content_hash.is_empty() {
+        // The first explicit "Cargar" establishes the baseline.  The UI
+        // already asks for confirmation before applying the downloaded copy.
+        return PullDecision::Download;
+    }
+    if local_dirty {
+        return if remote_hash == known_content_hash {
+            PullDecision::LocalAhead
+        } else {
+            PullDecision::Conflict
+        };
+    }
+    if remote_hash == known_content_hash {
+        PullDecision::Noop
+    } else {
+        PullDecision::Download
+    }
+}
+
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
@@ -688,12 +751,14 @@ pub fn drive_connect(app: AppHandle, lock: State<DriveLock>) -> Result<DriveStat
     config.token_expiry_unix = now_unix().saturating_add(expires_in);
     config.email = fetch_email(&access).unwrap_or_default();
     config.auto_sync = true;
-    config.local_dirty = true;
+    // Connecting authorizes this PC; it is not a local data change.  Leaving
+    // this false lets the user choose Cargar on a first connection.
+    config.local_dirty = false;
     save_config(&app, &config)?;
     Ok(status_from(
         &config,
         format!(
-            "Conectado como {}. La sync automática quedó activa.",
+            "Conectado como {}. Elegí Cargar de Drive o Guardar en Drive.",
             if config.email.is_empty() {
                 "Google"
             } else {
@@ -721,43 +786,42 @@ pub fn drive_push(
     let mut config = load_config(&app)?;
     let access = ensure_access_token(&app, &mut config)?;
 
-    // Resolve remote file id if missing.
+    // Resolve the remote id if missing, but do not adopt its timestamp as a
+    // synchronization baseline.  Only a successful pull/push establishes it.
     if config.file_id.is_empty() {
-        if let Some((id, modified)) = find_remote_file(&access)? {
+        if let Some((id, _)) = find_remote_file(&access)? {
             config.file_id = id;
-            if config.last_remote_modified_time.is_empty() {
-                config.last_remote_modified_time = modified;
-            }
         }
     }
 
-    // Conflict: remote moved ahead and we still have local dirty (unless force).
-    if !force && !config.file_id.is_empty() {
+    if !config.file_id.is_empty() {
         if let Ok((remote_content, remote_modified)) = download_file(&access, &config.file_id) {
             let remote_hash = content_hash(&remote_content);
             let local_hash = content_hash(&content);
-            if remote_hash != local_hash
-                && !config.last_remote_modified_time.is_empty()
-                && remote_modified != config.last_remote_modified_time
-                && config.local_dirty
-            {
-                return Ok(DrivePushResult {
-                    action: "conflict".into(),
-                    status: status_from(&config, "Conflicto: hay cambios locales y en Drive."),
-                    message: "conflict".into(),
-                });
-            }
-            if remote_hash == local_hash {
-                config.local_dirty = false;
-                config.last_content_hash = local_hash;
-                config.last_remote_modified_time = remote_modified;
-                config.last_sync_at = now_iso();
-                save_config(&app, &config)?;
-                return Ok(DrivePushResult {
-                    action: "noop".into(),
-                    status: status_from(&config, "Ya estaba al día con Drive."),
-                    message: "noop".into(),
-                });
+            match decide_push(&config.last_content_hash, &remote_hash, &local_hash, force) {
+                PushDecision::Conflict => {
+                    return Ok(DrivePushResult {
+                        action: "conflict".into(),
+                        status: status_from(
+                            &config,
+                            "Conflicto: Drive tiene una copia distinta a la de esta PC.",
+                        ),
+                        message: "conflict".into(),
+                    });
+                }
+                PushDecision::Noop => {
+                    config.local_dirty = false;
+                    config.last_content_hash = local_hash;
+                    config.last_remote_modified_time = remote_modified;
+                    config.last_sync_at = now_iso();
+                    save_config(&app, &config)?;
+                    return Ok(DrivePushResult {
+                        action: "noop".into(),
+                        status: status_from(&config, "Ya estaba al día con Drive."),
+                        message: "noop".into(),
+                    });
+                }
+                PushDecision::Upload => {}
             }
         }
     }
@@ -831,24 +895,26 @@ pub fn drive_pull(
 
     let remote_hash = content_hash(&content);
 
-    if !force {
-        if !config.last_content_hash.is_empty() && remote_hash == config.last_content_hash {
+    match decide_pull(
+        &config.last_content_hash,
+        &remote_hash,
+        config.local_dirty,
+        force,
+    ) {
+        PullDecision::Noop => {
             config.last_remote_modified_time = modified.clone();
             save_config(&app, &config)?;
-            return Ok(DrivePullResult {
+            Ok(DrivePullResult {
                 action: "noop".into(),
                 status: status_from(&config, "Ya tenés la última copia de Drive."),
                 content: None,
                 remote_modified_time: modified,
                 message: "noop".into(),
-            });
+            })
         }
-        if config.local_dirty
-            && !config.last_remote_modified_time.is_empty()
-            && modified != config.last_remote_modified_time
-            && remote_hash != config.last_content_hash
-        {
-            return Ok(DrivePullResult {
+        PullDecision::Conflict => {
+            save_config(&app, &config)?;
+            Ok(DrivePullResult {
                 action: "conflict".into(),
                 status: status_from(
                     &config,
@@ -857,29 +923,29 @@ pub fn drive_pull(
                 content: Some(content),
                 remote_modified_time: modified,
                 message: "conflict".into(),
-            });
+            })
         }
-        // Local changes and remote still the last one we knew → push later.
-        if config.local_dirty {
+        PullDecision::LocalAhead => {
             save_config(&app, &config)?;
-            return Ok(DrivePullResult {
+            Ok(DrivePullResult {
                 action: "local_ahead".into(),
                 status: status_from(&config, "Hay cambios locales por subir."),
                 content: None,
                 remote_modified_time: modified,
                 message: "local_ahead".into(),
-            });
+            })
+        }
+        PullDecision::Download => {
+            save_config(&app, &config)?;
+            Ok(DrivePullResult {
+                action: "download".into(),
+                status: status_from(&config, "Hay una copia más nueva en Drive."),
+                content: Some(content),
+                remote_modified_time: modified,
+                message: "download".into(),
+            })
         }
     }
-
-    save_config(&app, &config)?;
-    Ok(DrivePullResult {
-        action: "download".into(),
-        status: status_from(&config, "Hay una copia más nueva en Drive."),
-        content: Some(content),
-        remote_modified_time: modified,
-        message: "download".into(),
-    })
 }
 
 #[tauri::command]
@@ -898,4 +964,89 @@ pub fn drive_confirm_pulled(
         &config,
         "Copia de Drive aplicada en este equipo.",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn first_push_with_a_different_remote_is_a_conflict() {
+        assert_eq!(
+            decide_push("", "remote-copy", "local-copy", false),
+            PushDecision::Conflict
+        );
+    }
+
+    #[test]
+    fn explicit_force_permits_an_intentional_remote_overwrite() {
+        assert_eq!(
+            decide_push("", "remote-copy", "local-copy", true),
+            PushDecision::Upload
+        );
+    }
+
+    #[test]
+    fn matching_remote_adopts_the_sync_baseline() {
+        assert_eq!(
+            decide_push("", "same-copy", "same-copy", false),
+            PushDecision::Noop
+        );
+    }
+
+    #[test]
+    fn known_unchanged_remote_accepts_local_upload() {
+        assert_eq!(
+            decide_push("remote-copy", "remote-copy", "local-copy", false),
+            PushDecision::Upload
+        );
+    }
+
+    #[test]
+    fn changed_remote_conflicts_even_when_timestamp_is_not_available() {
+        assert_eq!(
+            decide_push("base-copy", "remote-copy", "local-copy", false),
+            PushDecision::Conflict
+        );
+    }
+
+    #[test]
+    fn first_pull_downloads_remote_instead_of_claiming_local_ahead() {
+        assert_eq!(
+            decide_pull("", "remote-copy", true, false),
+            PullDecision::Download
+        );
+    }
+
+    #[test]
+    fn dirty_local_with_unchanged_remote_is_local_ahead() {
+        assert_eq!(
+            decide_pull("base-copy", "base-copy", true, false),
+            PullDecision::LocalAhead
+        );
+    }
+
+    #[test]
+    fn divergent_local_and_remote_is_a_pull_conflict() {
+        assert_eq!(
+            decide_pull("base-copy", "remote-copy", true, false),
+            PullDecision::Conflict
+        );
+    }
+
+    #[test]
+    fn unchanged_remote_without_local_changes_is_a_noop() {
+        assert_eq!(
+            decide_pull("base-copy", "base-copy", false, false),
+            PullDecision::Noop
+        );
+    }
+
+    #[test]
+    fn changed_remote_without_local_changes_downloads() {
+        assert_eq!(
+            decide_pull("base-copy", "remote-copy", false, false),
+            PullDecision::Download
+        );
+    }
 }

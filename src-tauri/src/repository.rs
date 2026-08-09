@@ -501,16 +501,19 @@ fn validate_snapshot(snapshot: &AppSnapshot) -> Result<(), String> {
             "pending" | "skipped" => record.actual_amount_cents.is_none(),
             _ => false,
         };
+        // Las ocurrencias creadas antes del modelo V3.2 pueden estar pagadas
+        // sin una fecha efectiva conocida. El vacío conserva esa información
+        // histórica sin inventar una fecha; cualquier fecha presente sí debe
+        // ser un ISO YYYY-MM-DD válido.
+        let effective_date_is_valid =
+            record.effective_date.is_empty() || is_valid_iso_date(&record.effective_date);
         if transaction_id != record.transaction_id
             || month_key != record.month_key
             || !is_valid_month(&record.month_key)
             || record.planned_amount_cents <= 0
             || record.series_amount_cents <= 0
             || !actual_is_valid
-            || (record.status == "paid"
-                && (record.effective_date.len() != 10
-                    || record.effective_date.as_bytes().get(4) != Some(&b'-')
-                    || record.effective_date.as_bytes().get(7) != Some(&b'-')))
+            || !effective_date_is_valid
             || !matches!(record.kind.as_str(), "income" | "expense")
             || record.name.trim().is_empty()
             || record.category.trim().is_empty()
@@ -604,6 +607,40 @@ fn validate_snapshot(snapshot: &AppSnapshot) -> Result<(), String> {
             }
         } else if charge.monthly_amount_cents <= 0 {
             return Err("Hay un gasto fijo de tarjeta inválido.".into());
+        }
+    }
+
+    let mut planned_ids = HashSet::new();
+    for item in &snapshot.planned_items {
+        let valid_recurrence = matches!(item.recurrence.as_str(), "once" | "monthly");
+        let valid_end_month = item.end_month.is_empty()
+            || (item.recurrence == "monthly"
+                && is_valid_month(&item.end_month)
+                && item.end_month >= item.month_key);
+        let mut resolved_months = HashSet::new();
+        let valid_fulfilled = item
+            .fulfilled_months
+            .iter()
+            .all(|month| is_valid_month(month) && resolved_months.insert(month.as_str()));
+        let valid_dismissed = item
+            .dismissed_months
+            .iter()
+            .all(|month| is_valid_month(month) && resolved_months.insert(month.as_str()));
+        if item.id.trim().is_empty()
+            || !planned_ids.insert(item.id.as_str())
+            || !matches!(item.kind.as_str(), "income" | "expense")
+            || item.name.trim().is_empty()
+            || item.category.trim().is_empty()
+            || item.person.trim().is_empty()
+            || item.amount_cents <= 0
+            || !is_valid_month(&item.month_key)
+            || !valid_recurrence
+            || !valid_end_month
+            || !(0..=31).contains(&item.due_day)
+            || !valid_fulfilled
+            || !valid_dismissed
+        {
+            return Err("Hay un previsto inválido o duplicado.".into());
         }
     }
 
@@ -1336,6 +1373,21 @@ mod tests {
     }
 
     #[test]
+    fn legacy_paid_occurrence_without_effective_date_round_trips() {
+        let mut expected = sample_snapshot();
+        expected
+            .occurrences
+            .get_mut("archived:2026-07")
+            .unwrap()
+            .effective_date = String::new();
+        let mut connection = memory_database();
+        save_snapshot(&mut connection, expected.clone(), None).unwrap();
+        let actual: AppSnapshot =
+            serde_json::from_value(load_state(&connection).unwrap().unwrap()).unwrap();
+        assert_eq!(actual.occurrences, expected.occurrences);
+    }
+
+    #[test]
     fn planned_active_view_is_accepted() {
         let mut snapshot = sample_snapshot();
         snapshot.active_view = "planned".into();
@@ -1389,6 +1441,34 @@ mod tests {
         assert_eq!(actual.planned_items, expected.planned_items);
         assert_eq!(actual.planned_items[0].name, "Alquiler");
         assert_eq!(actual.planned_items[0].amount_cents, 15_000_000);
+    }
+
+    #[test]
+    fn invalid_planned_item_is_rejected_without_replacing_previous_state() {
+        let mut connection = memory_database();
+        let original = sample_snapshot();
+        save_snapshot(&mut connection, original.clone(), None).unwrap();
+        let mut invalid = original.clone();
+        invalid.planned_items = vec![PlannedItem {
+            id: "plan-invalid".into(),
+            kind: "expense".into(),
+            name: "Servicio".into(),
+            category: "Servicios".into(),
+            person: "Compartido".into(),
+            amount_cents: 1000,
+            month_key: "2026-08".into(),
+            recurrence: "monthly".into(),
+            end_month: "2026-07".into(),
+            due_day: 5,
+            note: String::new(),
+            created_at: String::new(),
+            fulfilled_months: vec![],
+            dismissed_months: vec![],
+        }];
+        assert!(save_snapshot(&mut connection, invalid, None).is_err());
+        let actual: AppSnapshot =
+            serde_json::from_value(load_state(&connection).unwrap().unwrap()).unwrap();
+        assert_eq!(actual, original);
     }
 
     #[test]

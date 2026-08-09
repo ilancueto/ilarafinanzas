@@ -3,6 +3,7 @@
  */
 import { fromCents, toCents } from "./state-core.js";
 import { isValidMonthKey, monthDiff, addMonths, isEndMonthValid, installmentAmountCents, formatMonthKey } from "./finance-core.js";
+import { withSubmitLock } from "./ui-core.js";
 
 export function createMovementsUi(api) {
   const getState = () => api.getState();
@@ -34,7 +35,6 @@ export function createMovementsUi(api) {
     sanitizeText,
     createId,
     getMonthTotals,
-    renderMovementTemplates,
   } = api;
 
 function validateScheduleRange({ report = false } = {}) {
@@ -182,7 +182,6 @@ function openMovementDialog(transactionId = "", monthKey = getState().activeMont
   getDom().deleteMovementBtn.hidden = !source;
   if (getDom().duplicateMovementBtn) getDom().duplicateMovementBtn.hidden = !source;
   updateScheduleFields();
-  renderMovementTemplates();
   // requestAnimationFrame: un frame después del showModal, sin setTimeout de 40ms.
   requestAnimationFrame(() => {
     if (!getDom().movementDialog?.open) return;
@@ -332,6 +331,10 @@ function clearSeriesOccurrencesFromMonth(transactionId, fromMonth) {
 
 async function saveMovement(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().movementForm, saveMovementLocked);
+}
+
+async function saveMovementLocked() {
   const formData = new FormData(getDom().movementForm);
   if (!validateScheduleRange({ report: true })) return;
   // Guardia de mes cerrado: el mes del movimiento y el activo no deben estar cerrados.

@@ -7,7 +7,7 @@ Datos **locales** (SQLite). Opcional: sync con **tu** Google Drive.
 
 ## Versión actual
 
-- **Producto:** ver `package.json` (hoy **3.9.9.14** · canal Estable · Soft Noir · Drive Guardar/Cargar)
+- **Producto:** ver `package.json` (hoy **3.9.9.18** · canal Estable · Soft Noir · Drive Guardar/Cargar)
 - **Distribución:** instalador Windows (**Setup**). El portable se considera legacy.
 
 ## Instalar / actualizar

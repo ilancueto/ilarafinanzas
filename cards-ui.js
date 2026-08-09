@@ -20,6 +20,7 @@ import {
 } from "./cards-core.js";
 import { fromCents, toCents } from "./state-core.js";
 import { addMonths, isValidMonthKey } from "./finance-core.js";
+import { withSubmitLock } from "./ui-core.js";
 
 export function createCardsUi(api) {
   const getState = () => api.getState();
@@ -703,6 +704,10 @@ function openChargeDialog(cardId, chargeType = "installment") {
 
 async function saveCreditCard(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().cardForm, saveCreditCardLocked);
+}
+
+async function saveCreditCardLocked() {
   const formData = new FormData(getDom().cardForm);
   const existingId = sanitizeText(formData.get("id"));
   const card = normalizeCreditCard({
@@ -813,6 +818,10 @@ async function generateCardStatement(cardId) {
 
 async function saveCardCharge(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().chargeForm, saveCardChargeLocked);
+}
+
+async function saveCardChargeLocked() {
   const formData = new FormData(getDom().chargeForm);
   const rawType = formData.get("chargeType");
   const chargeType = rawType === "fixed" ? "fixed" : rawType === "purchase" ? "purchase" : "installment";
@@ -871,12 +880,16 @@ async function saveCardCharge(event) {
       ? "Plan en cuotas agregado"
       : chargeType === "purchase"
         ? "Compra en tarjeta registrada"
-        : "Gasto fijo agregado",
+      : "Gasto fijo agregado",
   );
 }
 
 async function saveCardPurchase(event) {
   event.preventDefault();
+  return withSubmitLock(getDom().purchaseForm, saveCardPurchaseLocked);
+}
+
+async function saveCardPurchaseLocked() {
   if (!getDom().purchaseForm) return;
   const formData = new FormData(getDom().purchaseForm);
   const cardId = sanitizeText(formData.get("cardId"));
