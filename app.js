@@ -72,7 +72,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.18";
+const APP_VERSION = "3.9.9.19";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";

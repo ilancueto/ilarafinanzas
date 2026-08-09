@@ -1,5 +1,18 @@
 # Historial de cambios
 
+## 3.9.9.19 — Estable — 2026-08-09
+
+### Drive y datos
+- **Primera conexión a Drive protegida:** una copia remota distinta ya no puede ser sobrescrita automáticamente; exige elegir Cargar o Guardar explícitamente.
+- La detección de conflictos usa el contenido sincronizado como base, no sólo la fecha remota.
+- Las ocurrencias históricas pagadas sin fecha efectiva se conservan al migrar, y los previstos inválidos se rechazan antes de reemplazar los datos guardados.
+
+### Corregido
+- **Nuevo movimiento:** se eliminó una referencia faltante de la modularización que impedía abrir el diálogo.
+- Formularios de movimientos, tarjetas, previstos, personas, categorías, presupuestos y ajustes bloquean envíos duplicados mientras guardan.
+- Navegar por vistas, meses o el horizonte de proyección ya no programa una sincronización innecesaria con Drive.
+- Navegación móvil ajustada para sus seis secciones y diálogo de movimiento con etiqueta accesible.
+
 ## 3.9.9.18 — Estable — 2026-08-09
 
 ### Visual / UX
