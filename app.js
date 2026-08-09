@@ -71,7 +71,7 @@ import {
   setDataProfile,
 } from "./src/storage.ts";
 
-const APP_VERSION = "3.9.9.16";
+const APP_VERSION = "3.9.9.17";
 const APP_CHANNEL = "Estable";
 /** Repo público de Releases (instalador Setup). */
 const GITHUB_REPO = "ilancueto/ilarafinanzas";
@@ -89,6 +89,61 @@ const VIEW_FILTERS_KEY = "ilara-view-filters-v1";
 const UPDATE_DISMISS_KEY = "ilara-update-dismissed-v1";
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const LEGACY_KEYS = ["trama-finanzas-v3", "finanzas-personales-app-v2", "finanzas-personales-app-v1"];
+
+/** Buffer temporal de diagnóstico (hasta estabilizar modularización). */
+const DEBUG_LOG_MAX = 400;
+const debugLogBuffer = [];
+function pushDebugLog(level, message, extra = "") {
+  const line = `[${new Date().toISOString()}] ${level}: ${message}${extra ? ` | ${extra}` : ""}`;
+  debugLogBuffer.push(line);
+  if (debugLogBuffer.length > DEBUG_LOG_MAX) debugLogBuffer.splice(0, debugLogBuffer.length - DEBUG_LOG_MAX);
+}
+function installDebugLogCapture() {
+  const wrap = (level, original) => (...args) => {
+    try {
+      const text = args.map((a) => {
+        if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack || ""}`;
+        if (typeof a === "string") return a;
+        try { return JSON.stringify(a); } catch { return String(a); }
+      }).join(" ");
+      pushDebugLog(level, text.slice(0, 4000));
+    } catch { /* ignore */ }
+    return original.apply(console, args);
+  };
+  console.error = wrap("error", console.error.bind(console));
+  console.warn = wrap("warn", console.warn.bind(console));
+  window.addEventListener("error", (event) => {
+    pushDebugLog("window.error", event.message || "error", event.error?.stack || `${event.filename}:${event.lineno}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    pushDebugLog(
+      "unhandledrejection",
+      reason instanceof Error ? reason.message : String(reason),
+      reason instanceof Error ? reason.stack || "" : "",
+    );
+  });
+  pushDebugLog("info", "Debug log capture ON", `v${APP_VERSION}`);
+}
+function exportDebugLog() {
+  const body = [
+    `Ilara debug log · v${APP_VERSION} · ${new Date().toISOString()}`,
+    `profile=${dataProfile?.id || "?"} sandbox=${isSandboxProfile()}`,
+    `activeMonth=${state?.activeMonth || "?"} view=${state?.activeView || "?"}`,
+    `tx=${state?.transactions?.length ?? "?"} occ=${Object.keys(state?.occurrences || {}).length} cards=${state?.creditCards?.length ?? "?"} planned=${state?.plannedItems?.length ?? "?"}`,
+    "---",
+    ...debugLogBuffer,
+  ].join("\n");
+  const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ilara-debug-${APP_VERSION}-${Date.now()}.log`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("Log de diagnóstico descargado");
+}
+installDebugLogCapture();
 /** Catálogo base de categorías (hogar AR/ES). Se fusiona al cargar con las del usuario. */
 const DEFAULT_CATEGORIES = [
   // Ingresos
@@ -321,6 +376,7 @@ const dom = {
   importBtn: document.querySelector("#importBtn"),
   importFileInput: document.querySelector("#importFileInput"),
   checkUpdatesBtn: document.querySelector("#checkUpdatesBtn"),
+  exportDebugLogBtn: document.querySelector("#exportDebugLogBtn"),
   openReleasesBtn: document.querySelector("#openReleasesBtn"),
   updateStatusText: document.querySelector("#updateStatusText"),
   driveSetupBlock: document.querySelector("#driveSetupBlock"),
@@ -2208,6 +2264,7 @@ const homeUi = createHomeUi({
   sanitizeText,
   createId,
   getMonthTotals,
+  buildProjection,
   toggleOccurrenceStatus: (...args) => toggleOccurrenceStatus(...args),
   dueStateForOccurrence,
   installmentProgress,
@@ -2989,30 +3046,36 @@ function render() {
     renderEmergencyChrome();
     return;
   }
-  try {
-    if (dom.activeMonthInput) dom.activeMonthInput.value = state.activeMonth;
-    if (dom.activeMonthDisplay) {
-      dom.activeMonthDisplay.textContent = formatMonthLabel(state.activeMonth).toLocaleLowerCase("es");
+  const runStep = (name, fn) => {
+    try {
+      fn();
+    } catch (error) {
+      console.error(`Error en render/${name}:`, error);
+      pushDebugLog("render", name, error?.stack || error?.message || String(error));
+      try {
+        showToast(`Error en ${name}: ${error?.message || error}`);
+      } catch { /* toast aún no disponible */ }
     }
-    if (dom.projectionMonthsSelect) {
-      dom.projectionMonthsSelect.value = String(state.settings?.projectionMonths ?? 12);
-    }
-    if (dom.appVersion) {
-      dom.appVersion.textContent = `${APP_CHANNEL} · v${APP_VERSION}${isSandboxProfile() ? " · prueba" : ""}`;
-    }
-    renderProfileChrome();
-    renderEmergencyChrome();
-    renderFormSelects();
-    renderDashboard();
-    renderMovements();
-    renderPlanned();
-    renderCards();
-    renderProjection();
-    renderSettings();
-  } catch (error) {
-    console.error("Error al renderizar la UI:", error);
-    showToast(`Error de pantalla: ${error?.message || error}`);
+  };
+  if (dom.activeMonthInput) dom.activeMonthInput.value = state.activeMonth;
+  if (dom.activeMonthDisplay) {
+    dom.activeMonthDisplay.textContent = formatMonthLabel(state.activeMonth).toLocaleLowerCase("es");
   }
+  if (dom.projectionMonthsSelect) {
+    dom.projectionMonthsSelect.value = String(state.settings?.projectionMonths ?? 12);
+  }
+  if (dom.appVersion) {
+    dom.appVersion.textContent = `${APP_CHANNEL} · v${APP_VERSION}${isSandboxProfile() ? " · prueba" : ""}`;
+  }
+  runStep("profile", renderProfileChrome);
+  runStep("emergency", renderEmergencyChrome);
+  runStep("formSelects", renderFormSelects);
+  runStep("dashboard", renderDashboard);
+  runStep("movements", renderMovements);
+  runStep("planned", renderPlanned);
+  runStep("cards", renderCards);
+  runStep("projection", renderProjection);
+  runStep("settings", renderSettings);
 }
 
 function switchView(view) {
@@ -3600,6 +3663,7 @@ dom.updateBannerLaterBtn?.addEventListener("click", () => {
   else if (dom.updateBanner) dom.updateBanner.hidden = true;
 });
 dom.openReleasesBtn?.addEventListener("click", () => void openBrowserUrl(GITHUB_RELEASES_URL));
+dom.exportDebugLogBtn?.addEventListener("click", () => exportDebugLog());
 wireDriveUi();
 
 dom.profileHogarBtn?.addEventListener("click", () => void switchDataProfile("hogar"));

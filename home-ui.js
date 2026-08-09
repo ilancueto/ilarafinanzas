@@ -34,6 +34,7 @@ export function createHomeUi(api) {
     sanitizeText,
     createId,
     getMonthTotals,
+    buildProjection,
     toggleOccurrenceStatus,
     installmentProgress,
     removeCategory,
@@ -402,7 +403,9 @@ function renderCategoryBreakdown(expenses) {
 }
 
 function renderMiniForecast() {
+  if (!getDom().miniForecast) return;
   getDom().miniForecast.replaceChildren();
+  if (typeof buildProjection !== "function") return;
   buildProjection(4).forEach((month, index) => {
     const card = element("button", "forecast-card");
     card.type = "button";

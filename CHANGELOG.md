@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 3.9.9.17 — Estable — 2026-08-09
+
+### Corregido
+- **Movimientos/Previstos en blanco (causa real):** `renderMiniForecast` llamaba a `buildProjection` sin inyectarlo en `home-ui` → ReferenceError en Inicio y el `render()` nunca llegaba a listas.
+- Cada paso de `render()` va en try/catch aparte (un fallo no apaga todas las vistas).
+
+### Diagnóstico (temporal)
+- Ajustes → **Exportar log de diagnóstico**: captura console.error/warn, errores de ventana y fallos de render en un `.log` descargable.
+
 ## 3.9.9.16 — Estable — 2026-08-09
 
 ### Corregido
